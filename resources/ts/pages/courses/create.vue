@@ -1,0 +1,258 @@
+<script setup lang="ts">
+definePage({
+  meta: {
+    requiresAdmin: true,
+  },
+})
+
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useCookie } from '@core/composable/useCookie'
+
+const router = useRouter()
+const currentStep = ref(0)
+const steps = ['Basic Info', 'Content', 'SEO', 'Pricing', 'Publish']
+
+const form = ref({
+  title: '',
+  slug: '',
+  short_description: '',
+  description: '',
+  thumbnail: null as File | null,
+  category: null,
+  difficulty: null,
+  language: null,
+  meta_title: '',
+  meta_description: '',
+  keywords: '',
+  is_free: false,
+  price: null,
+  discount_price: null,
+  include_in_subscription: false,
+  status: 'Draft'
+})
+
+const isSubmitting = ref(false)
+
+const submitCourse = async () => {
+  isSubmitting.value = true
+  try {
+    const formData = new FormData()
+    Object.keys(form.value).forEach(key => {
+      const value = (form.value as any)[key]
+      if (value !== null && value !== '') {
+        formData.append(key, value instanceof File ? value : String(value))
+      }
+    })
+
+    const token = useCookie('accessToken').value
+    await fetch('/api/dashboard/courses', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    })
+
+    router.push({ name: 'courses' })
+  } catch (error) {
+    console.error('Failed to create course:', error)
+  } finally {
+    isSubmitting.value = false
+  }
+}
+</script>
+
+<template>
+  <div>
+    <div class="d-flex align-center gap-2 mb-6">
+      <VBtn
+        icon="tabler-arrow-left"
+        variant="text"
+        :to="{ name: 'courses' }"
+      />
+      <div>
+        <h4 class="text-h4">{{ $t('Create New Course') }}</h4>
+        <p class="text-body-2 text-medium-emphasis mb-0">{{ $t('Build your pharmacy course step by step') }}</p>
+      </div>
+    </div>
+
+    <VCard>
+      <VCardText>
+        <VTabs v-model="currentStep" class="mb-6">
+          <VTab
+            v-for="(step, i) in steps"
+            :key="step"
+            :value="i"
+          >
+            <VIcon
+              :icon="i <= currentStep ? 'tabler-circle-check' : 'tabler-circle'"
+              start
+            />
+            {{ $t(step) }}
+          </VTab>
+        </VTabs>
+
+        <VWindow v-model="currentStep">
+          <!-- Basic Info -->
+          <VWindowItem :value="0">
+            <VRow>
+              <VCol cols="12" md="8">
+                <VTextField
+                  v-model="form.title"
+                  :label="$t('Course Title')"
+                  placeholder="e.g. Advanced Clinical Pharmacology"
+                  class="mb-4"
+                />
+                <VTextField
+                  v-model="form.slug"
+                  :label="$t('Course Slug')"
+                  placeholder="advanced-clinical-pharmacology"
+                  class="mb-4"
+                />
+                <VTextarea
+                  v-model="form.short_description"
+                  :label="$t('Short Description')"
+                  placeholder="Brief description for course cards"
+                  rows="3"
+                  class="mb-4"
+                />
+                <VTextarea
+                  v-model="form.description"
+                  :label="$t('Full Description')"
+                  placeholder="Detailed course description"
+                  rows="6"
+                  class="mb-4"
+                />
+              </VCol>
+              <VCol cols="12" md="4">
+                <VFileInput
+                  :label="$t('Thumbnail')"
+                  accept="image/*"
+                  prepend-icon="tabler-photo"
+                  class="mb-4"
+                  @change="e => form.thumbnail = e.target.files[0]"
+                />
+                <VSelect
+                  v-model="form.category"
+                  :label="$t('Category')"
+                  :items="['Pharmacology', 'Clinical Pharmacy', 'Drug Interactions', 'Chemistry'].map(v => ({ title: $t(v), value: v }))"
+                  class="mb-4"
+                />
+                <VSelect
+                  v-model="form.difficulty"
+                  :label="$t('Difficulty Level')"
+                  :items="['Beginner', 'Intermediate', 'Advanced'].map(v => ({ title: $t(v), value: v }))"
+                  class="mb-4"
+                />
+                <VSelect
+                  v-model="form.language"
+                  :label="$t('Language')"
+                  :items="['Arabic', 'English'].map(v => ({ title: $t(v), value: v }))"
+                  class="mb-4"
+                />
+              </VCol>
+            </VRow>
+          </VWindowItem>
+
+          <!-- Content -->
+          <VWindowItem :value="1">
+            <VAlert type="info" variant="tonal">
+              {{ $t('Module and Lesson builder will be available after the course is created.') }}
+            </VAlert>
+          </VWindowItem>
+
+          <!-- SEO -->
+          <VWindowItem :value="2">
+            <VRow>
+              <VCol cols="12" md="8">
+                <VTextField
+                  v-model="form.meta_title"
+                  :label="$t('Meta Title')"
+                  placeholder="SEO title for search engines"
+                  class="mb-4"
+                />
+                <VTextarea
+                  v-model="form.meta_description"
+                  :label="$t('Meta Description')"
+                  placeholder="SEO description (150-160 characters)"
+                  rows="3"
+                  class="mb-4"
+                />
+                <VTextField
+                  v-model="form.keywords"
+                  :label="$t('Keywords')"
+                  placeholder="pharmacy, pharmacology, clinical"
+                  class="mb-4"
+                />
+              </VCol>
+            </VRow>
+          </VWindowItem>
+
+          <!-- Pricing -->
+          <VWindowItem :value="3">
+            <VRow>
+              <VCol cols="12" md="6">
+                <VSwitch v-model="form.is_free" :label="$t('Free Course')" class="mb-4" />
+                <VTextField
+                  v-model="form.price"
+                  :label="$t('Course Price (SAR)')"
+                  placeholder="450"
+                  type="number"
+                  class="mb-4"
+                  :disabled="form.is_free"
+                />
+                <VTextField
+                  v-model="form.discount_price"
+                  :label="$t('Discount Price (SAR)')"
+                  placeholder="350"
+                  type="number"
+                  class="mb-4"
+                  :disabled="form.is_free"
+                />
+                <VSwitch v-model="form.include_in_subscription" :label="$t('Include in Subscription')" class="mb-4" />
+              </VCol>
+            </VRow>
+          </VWindowItem>
+
+          <!-- Publish -->
+          <VWindowItem :value="4">
+            <VRow>
+              <VCol cols="12" md="6">
+                <VSelect
+                  v-model="form.status"
+                  :label="$t('Status')"
+                  :items="['Draft', 'Published', 'Scheduled'].map(v => ({ title: $t(v), value: v }))"
+                  class="mb-4"
+                />
+                <VBtn color="primary" size="large" block :loading="isSubmitting" @click="submitCourse">
+                  <VIcon icon="tabler-upload" start />
+                  {{ $t('Publish Course') }}
+                </VBtn>
+              </VCol>
+            </VRow>
+          </VWindowItem>
+        </VWindow>
+
+        <div class="d-flex justify-space-between mt-6">
+          <VBtn
+            :disabled="currentStep === 0"
+            variant="outlined"
+            @click="currentStep--"
+          >
+            <VIcon icon="tabler-arrow-left" start />
+            {{ $t('Previous') }}
+          </VBtn>
+          <VBtn
+            v-if="currentStep < steps.length - 1"
+            color="primary"
+            @click="currentStep++"
+          >
+            {{ $t('Next') }}
+            <VIcon icon="tabler-arrow-right" end />
+          </VBtn>
+        </div>
+      </VCardText>
+    </VCard>
+  </div>
+</template>

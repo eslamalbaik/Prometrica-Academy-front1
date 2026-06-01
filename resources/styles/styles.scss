@@ -1,0 +1,16 @@
+// Write your overrides
+
+// Override NProgress loading bar to be vibrant blue
+#nprogress .bar {
+  background: #2196f3 !important; // Vibrant Blue
+  height: 4px !important; // Make it slightly thicker for better visibility
+}
+
+#nprogress .peg {
+  box-shadow: 0 0 10px #2196f3, 0 0 5px #2196f3 !important;
+}
+
+#nprogress .spinner-icon {
+  border-top-color: #2196f3 !important;
+  border-left-color: #2196f3 !important;
+}
