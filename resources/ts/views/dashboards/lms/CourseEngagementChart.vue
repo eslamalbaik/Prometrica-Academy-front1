@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const series = ref([
+const seriesData = ref([
   {
     name: 'Watch Time (hrs)',
     data: [120, 145, 98, 168, 155, 189, 210, 195, 230, 245, 220, 260],
@@ -9,6 +9,8 @@ const series = ref([
     data: [35, 42, 28, 55, 48, 62, 71, 65, 78, 82, 75, 95],
   },
 ])
+
+const series = computed(() => seriesData.value || [])
 
 const chartOptions = computed(() => ({
   chart: {
@@ -63,6 +65,7 @@ const chartOptions = computed(() => ({
 
     <VCardText>
       <VueApexCharts
+        v-if="seriesData && seriesData.length > 0"
         type="line"
         :height="280"
         :options="chartOptions"

@@ -43,33 +43,47 @@ const credentials = ref({
 const rememberMe = ref(false)
 
 import api from '@/plugins/axios'
+import { useAuthStore } from '@/stores/authStore'
+
+const isSubmitting = ref(false)
+const isSuccess = ref(false)
+
+const SUCCESS_DELAY_MS = 500
 
 const login = async () => {
+  isSubmitting.value = true
+  isSuccess.value = false
+  errors.value.email = undefined
+  errors.value.password = undefined
+
   try {
-    await api.get('/sanctum/csrf-cookie')
-    
     const res = await api.post('/login', {
       email: credentials.value.email,
       password: credentials.value.password,
     })
-    
+
     if (res.data.user.role !== 'admin') {
-       errors.value.email = 'Access denied. Admin privileges required.'
-       return
+      errors.value.email = 'Access denied. Admin privileges required.'
+      isSubmitting.value = false
+      return
     }
 
-    useCookie('userData').value = res.data.user
-    useCookie('accessToken').value = 'sanctum-cookie-auth'
-    
-    await nextTick(() => {
-      router.replace('/dashboards/lms')
-    })
+    const authStore = useAuthStore()
+    authStore.login(res.data.user, res.data.token)
+
+    isSubmitting.value = false
+    isSuccess.value = true
+    await new Promise(resolve => setTimeout(resolve, SUCCESS_DELAY_MS))
+    await router.replace('/dashboards/lms')
   }
   catch (err: any) {
     console.error(err)
+    isSubmitting.value = false
+    isSuccess.value = false
     if (err.response?.status === 422) {
       errors.value.email = err.response.data.errors?.email?.[0] || 'Invalid credentials'
-    } else {
+    }
+    else {
       errors.value.email = 'Login failed. Please try again.'
     }
   }
@@ -93,13 +107,13 @@ const onSubmit = () => {
 
   <VRow
     no-gutters
-    class="auth-wrapper bg-surface"
+    class="auth-wrapper bg-white"
   >
     <VCol
       md="8"
       class="d-none d-md-flex"
     >
-      <div class="position-relative bg-background w-100 me-0">
+      <div class="position-relative bg-white w-100 me-0">
         <div
           class="d-flex align-center justify-center w-100 h-100"
           style="padding-inline: 6.25rem;"
@@ -124,12 +138,13 @@ const onSubmit = () => {
     <VCol
       cols="12"
       md="4"
-      class="auth-card-v2 d-flex align-center justify-center"
+      class="auth-card-v2 d-flex align-center justify-center bg-white"
+      style="background-color: #fff !important;"
     >
       <VCard
         flat
         :max-width="500"
-        class="mt-12 mt-sm-0 pa-4"
+        class="mt-12 mt-sm-0 pa-4 bg-white"
       >
         <VCardText>
           <h4 class="text-h4 mb-1">
@@ -183,8 +198,12 @@ const onSubmit = () => {
                 <VBtn
                   block
                   type="submit"
+                  :loading="isSubmitting"
+                  :disabled="isSubmitting || isSuccess"
+                  :color="isSuccess ? 'success' : undefined"
+                  :prepend-icon="isSuccess ? 'tabler-check' : undefined"
                 >
-                  Secure Login
+                  {{ isSuccess ? 'Success' : 'Secure Login' }}
                 </VBtn>
               </VCol>
 

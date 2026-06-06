@@ -1,12 +1,77 @@
 import type { RouteNamedMap, _RouterTyped } from 'unplugin-vue-router'
+import { watch } from 'vue'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
+import { useAuthStore } from '@/stores/authStore'
+import { themeConfig } from '@themeConfig'
+
+const waitForAuthInit = (authStore: any) => {
+  if (!authStore.isInitializing)
+    return Promise.resolve()
+
+  return new Promise<void>(resolve => {
+    const unwatch = watch(
+      () => authStore.isInitializing,
+      val => {
+        if (!val) {
+          unwatch()
+          resolve()
+        }
+      },
+      { immediate: true }
+    )
+  })
+}
+
+const LANDING_URL = (import.meta.env.VITE_LANDING_URL || 'http://localhost:8080').replace(/\/$/, '')
+
+function redirectStudentToLanding(targetPath = '/student/dashboard') {
+  const url = new URL(`${LANDING_URL}/login`)
+  url.searchParams.set('to', targetPath)
+  if (typeof localStorage !== 'undefined') {
+    const token = localStorage.getItem('accessToken')
+    if (token) {
+      url.searchParams.set('token', token)
+    }
+  }
+  window.location.href = url.toString()
+}
 
 // Configure NProgress
 NProgress.configure({ showSpinner: false, speed: 400 })
 
+const SITE_TITLE = themeConfig.app.title
+
+const ROUTE_TAB_TITLES: Record<string, string> = {
+  'login': 'Sign In',
+  'register': 'Create Account',
+  'admin-login': 'Admin Sign In',
+  'not-authorized': 'Not Authorized',
+  'dashboards-lms': 'Dashboard',
+}
+
+function resolveDocumentTitle(routeName: string | symbol | null | undefined): string {
+  if (routeName == null || routeName === '')
+    return SITE_TITLE
+
+  const key = String(routeName)
+  const page = ROUTE_TAB_TITLES[key]
+    ?? key
+      .split('-')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+
+  return `${page} | ${SITE_TITLE}`
+}
+
 export const setupGuards = (router: _RouterTyped<RouteNamedMap & { [key: string]: any }>) => {
-  router.beforeEach(to => {
+  // beforeResolve guard to wait for initialization
+  router.beforeResolve(async to => {
+    const authStore = useAuthStore()
+    await waitForAuthInit(authStore)
+  })
+
+  router.beforeEach(async to => {
     // Start progress bar
     NProgress.start()
 
@@ -16,17 +81,36 @@ export const setupGuards = (router: _RouterTyped<RouteNamedMap & { [key: string]
     if (to.meta.public)
       return
 
-    const isLoggedIn = !!(useCookie('userData').value && useCookie('accessToken').value)
+    const authStore = useAuthStore()
+
+    if (to.meta.unauthenticatedOnly && to.query.logout === '1') {
+      await authStore.revokeSession()
+      return {
+        path: to.path,
+        query: {},
+        replace: true,
+      }
+    }
+
+    // Wait for auth initialization before evaluating routes
+    await waitForAuthInit(authStore)
+
+    const isLoggedIn = authStore.isLoggedIn
+    const userRole = authStore.userRole
+
+    // Redirect logged-in non-admins (students) to the landing-page student dashboard
+    if (isLoggedIn && userRole !== 'admin' && !to.meta.unauthenticatedOnly) {
+      redirectStudentToLanding()
+      return false
+    }
 
     if (to.meta.unauthenticatedOnly) {
       if (isLoggedIn) {
-        const userData = useCookie<Record<string, unknown> | null | undefined>('userData')
-        const userRole = userData.value?.role as string | undefined
-        
-        if (userRole === 'admin') {
+        if (userRole === 'admin')
           return '/dashboards/lms'
-        }
-        return '/student/dashboard'
+
+        redirectStudentToLanding()
+        return false
       }
       else
         return undefined
@@ -34,7 +118,7 @@ export const setupGuards = (router: _RouterTyped<RouteNamedMap & { [key: string]
 
     if (!isLoggedIn && to.matched.length) {
       return {
-        name: 'login',
+        name: 'admin-login',
         query: {
           ...to.query,
           to: to.fullPath !== '/' ? to.path : undefined,
@@ -42,20 +126,12 @@ export const setupGuards = (router: _RouterTyped<RouteNamedMap & { [key: string]
       }
     }
 
-    const userData = useCookie<Record<string, unknown> | null | undefined>('userData')
-    const userRole = userData.value?.role as string | undefined
-
-    if (to.meta.requiresAdmin && userRole !== 'admin') {
+    if (to.meta.requiresAdmin && userRole !== 'admin')
       return { name: 'not-authorized' }
-    }
-
-    if (to.meta.requiresStudent && userRole !== 'student') {
-      return { name: 'not-authorized' }
-    }
   })
 
-  router.afterEach(() => {
-    // Finish progress bar
+  router.afterEach(to => {
+    document.title = resolveDocumentTitle(to.name)
     NProgress.done()
   })
 }

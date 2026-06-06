@@ -8,8 +8,12 @@ definePage({
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCookie } from '@core/composable/useCookie'
+import api from '@/plugins/axios'
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
 
 const router = useRouter()
+const queryClient = useQueryClient()
+
 const currentStep = ref(0)
 const steps = ['Basic Info', 'Content', 'SEO', 'Pricing', 'Publish']
 
@@ -32,34 +36,57 @@ const form = ref({
   status: 'Draft'
 })
 
-const isSubmitting = ref(false)
+const validationErrors = ref<Record<string, string[]>>({})
 
-const submitCourse = async () => {
-  isSubmitting.value = true
-  try {
-    const formData = new FormData()
-    Object.keys(form.value).forEach(key => {
-      const value = (form.value as any)[key]
-      if (value !== null && value !== '') {
-        formData.append(key, value instanceof File ? value : String(value))
+const createCourseMutation = useMutation({
+  mutationFn: async (formData: FormData) => {
+    return await api.post('/api/dashboard/courses', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
       }
     })
-
-    const token = useCookie('accessToken').value
-    await fetch('/api/dashboard/courses', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
-    })
-
-    router.push({ name: 'courses' })
-  } catch (error) {
+  },
+  onSuccess: (response: any) => {
+    queryClient.invalidateQueries({ queryKey: ['courses'] })
+    const courseId = response.data?.course?.id
+    if (courseId) {
+      router.push(`/courses/${courseId}/builder`)
+    } else {
+      router.push({ name: 'courses' })
+    }
+  },
+  onError: (error: any) => {
     console.error('Failed to create course:', error)
-  } finally {
-    isSubmitting.value = false
+    if (error.response?.status === 422) {
+      validationErrors.value = error.response.data.errors || {}
+    }
   }
+})
+
+const submitCourse = () => {
+  validationErrors.value = {}
+  
+  const formData = new FormData()
+  
+  const courseData = { ...form.value }
+  if (courseData.is_free) {
+    courseData.price = null
+    courseData.discount_price = null
+  }
+
+  Object.keys(courseData).forEach(key => {
+    const value = (courseData as any)[key]
+    if (value !== null && value !== '') {
+      // Fix booleans for Laravel validation
+      if (typeof value === 'boolean') {
+        formData.append(key, value ? '1' : '0')
+      } else {
+        formData.append(key, value instanceof File ? value : String(value))
+      }
+    }
+  })
+
+  createCourseMutation.mutate(formData)
 }
 </script>
 
@@ -98,17 +125,22 @@ const submitCourse = async () => {
           <VWindowItem :value="0">
             <VRow>
               <VCol cols="12" md="8">
+                <VAlert v-if="Object.keys(validationErrors).length > 0" type="error" variant="tonal" class="mb-6">
+                  Please fix the validation errors below before submitting.
+                </VAlert>
                 <VTextField
                   v-model="form.title"
                   :label="$t('Course Title')"
                   placeholder="e.g. Advanced Clinical Pharmacology"
                   class="mb-4"
+                  :error-messages="validationErrors.title"
                 />
                 <VTextField
                   v-model="form.slug"
                   :label="$t('Course Slug')"
                   placeholder="advanced-clinical-pharmacology"
                   class="mb-4"
+                  :error-messages="validationErrors.slug"
                 />
                 <VTextarea
                   v-model="form.short_description"
@@ -116,6 +148,7 @@ const submitCourse = async () => {
                   placeholder="Brief description for course cards"
                   rows="3"
                   class="mb-4"
+                  :error-messages="validationErrors.short_description"
                 />
                 <VTextarea
                   v-model="form.description"
@@ -123,6 +156,7 @@ const submitCourse = async () => {
                   placeholder="Detailed course description"
                   rows="6"
                   class="mb-4"
+                  :error-messages="validationErrors.description"
                 />
               </VCol>
               <VCol cols="12" md="4">
@@ -132,24 +166,28 @@ const submitCourse = async () => {
                   prepend-icon="tabler-photo"
                   class="mb-4"
                   @change="e => form.thumbnail = e.target.files[0]"
+                  :error-messages="validationErrors.thumbnail"
                 />
                 <VSelect
                   v-model="form.category"
                   :label="$t('Category')"
                   :items="['Pharmacology', 'Clinical Pharmacy', 'Drug Interactions', 'Chemistry'].map(v => ({ title: $t(v), value: v }))"
                   class="mb-4"
+                  :error-messages="validationErrors.category"
                 />
                 <VSelect
                   v-model="form.difficulty"
                   :label="$t('Difficulty Level')"
                   :items="['Beginner', 'Intermediate', 'Advanced'].map(v => ({ title: $t(v), value: v }))"
                   class="mb-4"
+                  :error-messages="validationErrors.difficulty"
                 />
                 <VSelect
                   v-model="form.language"
                   :label="$t('Language')"
                   :items="['Arabic', 'English'].map(v => ({ title: $t(v), value: v }))"
                   class="mb-4"
+                  :error-messages="validationErrors.language"
                 />
               </VCol>
             </VRow>
@@ -171,6 +209,7 @@ const submitCourse = async () => {
                   :label="$t('Meta Title')"
                   placeholder="SEO title for search engines"
                   class="mb-4"
+                  :error-messages="validationErrors.meta_title"
                 />
                 <VTextarea
                   v-model="form.meta_description"
@@ -178,12 +217,14 @@ const submitCourse = async () => {
                   placeholder="SEO description (150-160 characters)"
                   rows="3"
                   class="mb-4"
+                  :error-messages="validationErrors.meta_description"
                 />
                 <VTextField
                   v-model="form.keywords"
                   :label="$t('Keywords')"
                   placeholder="pharmacy, pharmacology, clinical"
                   class="mb-4"
+                  :error-messages="validationErrors.keywords"
                 />
               </VCol>
             </VRow>
@@ -193,7 +234,7 @@ const submitCourse = async () => {
           <VWindowItem :value="3">
             <VRow>
               <VCol cols="12" md="6">
-                <VSwitch v-model="form.is_free" :label="$t('Free Course')" class="mb-4" />
+                <VSwitch v-model="form.is_free" :label="$t('Free Course')" class="mb-4" :error-messages="validationErrors.is_free" />
                 <VTextField
                   v-model="form.price"
                   :label="$t('Course Price (SAR)')"
@@ -201,6 +242,7 @@ const submitCourse = async () => {
                   type="number"
                   class="mb-4"
                   :disabled="form.is_free"
+                  :error-messages="validationErrors.price"
                 />
                 <VTextField
                   v-model="form.discount_price"
@@ -209,8 +251,9 @@ const submitCourse = async () => {
                   type="number"
                   class="mb-4"
                   :disabled="form.is_free"
+                  :error-messages="validationErrors.discount_price"
                 />
-                <VSwitch v-model="form.include_in_subscription" :label="$t('Include in Subscription')" class="mb-4" />
+                <VSwitch v-model="form.include_in_subscription" :label="$t('Include in Subscription')" class="mb-4" :error-messages="validationErrors.include_in_subscription" />
               </VCol>
             </VRow>
           </VWindowItem>
@@ -224,8 +267,9 @@ const submitCourse = async () => {
                   :label="$t('Status')"
                   :items="['Draft', 'Published', 'Scheduled'].map(v => ({ title: $t(v), value: v }))"
                   class="mb-4"
+                  :error-messages="validationErrors.status"
                 />
-                <VBtn color="primary" size="large" block :loading="isSubmitting" @click="submitCourse">
+                <VBtn color="primary" size="large" block :loading="createCourseMutation.isPending.value" @click="submitCourse">
                   <VIcon icon="tabler-upload" start />
                   {{ $t('Publish Course') }}
                 </VBtn>

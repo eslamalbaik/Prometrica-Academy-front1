@@ -1,23 +1,21 @@
 <script setup lang="ts">
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
+import { useAuthStore } from '@/stores/authStore'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
-const userData = useCookie<any>('userData')
+const userData = computed(() => authStore.user)
 
 import api from '@/plugins/axios'
 
 const logout = async () => {
-  try {
-    await api.post('/logout')
-  } catch (e) {
-    console.error('Logout error:', e)
-  }
-  useCookie('accessToken').value = null
-  userData.value = null
-  useCookie('userData').value = null
-  await router.push('/')
+  await authStore.revokeSession()
+  const landingUrl = (import.meta.env.VITE_LANDING_URL || 'http://localhost:8080').replace(/\/$/, '')
+  window.location.href = `${landingUrl}/?logout=1`
 }
+
+const landingUrl = (import.meta.env.VITE_LANDING_URL || 'http://localhost:8080').replace(/\/$/, '')
 
 const isStudent = computed(() => userData.value?.role === 'student')
 
@@ -25,10 +23,8 @@ const userProfileList = computed(() => {
   if (isStudent.value) {
     return [
       { type: 'divider' },
-      { type: 'navItem', icon: 'tabler-layout-dashboard', title: 'لوحتي', to: { name: 'student-dashboard' } },
-      { type: 'navItem', icon: 'tabler-book', title: 'دوراتي', to: { name: 'student-courses' } },
+      { type: 'navItem', icon: 'tabler-layout-dashboard', title: 'لوحتي', href: `${landingUrl}/student/dashboard` },
       { type: 'divider' },
-      { type: 'navItem', icon: 'tabler-certificate', title: 'شهاداتي', to: { name: 'certificates' } },
     ]
   }
   return [
@@ -120,6 +116,7 @@ const userProfileList = computed(() => {
               <VListItem
                 v-if="item.type === 'navItem'"
                 :to="item.to"
+                :href="item.href"
               >
                 <template #prepend>
                   <VIcon

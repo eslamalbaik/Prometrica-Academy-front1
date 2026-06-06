@@ -9,8 +9,7 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . -c .eslintrc.cjs --fix --rulesdir eslint-internal-rules/ --ext .ts,.js,.cjs,.vue,.tsx,.jsx",
     "build:icons": "tsx resources/ts/plugins/iconify/build-icons.ts",
-    "msw:init": "msw init public/ --save",
-    "postinstall": "npm run build:icons && npm run msw:init"
+    "postinstall": "npm run build:icons"
   },
   "dependencies": {
     "@casl/ability": "6.7.3",
@@ -19,6 +18,7 @@
     "@formkit/drag-and-drop": "0.1.6",
     "@sindresorhus/is": "7.1.0",
     "@tailwindcss/vite": "^4.3.0",
+    "@tanstack/vue-query": "^5.100.14",
     "@tiptap/extension-highlight": "^2.27.1",
     "@tiptap/extension-image": "^2.27.1",
     "@tiptap/extension-link": "^2.27.1",
@@ -109,6 +109,7 @@
     "msw": "2.6.8",
     "postcss-html": "1.8.0",
     "postcss-scss": "4.0.9",
+    "rollup-plugin-visualizer": "^7.0.1",
     "sass": "1.76.0",
     "shiki": "1.29.2",
     "stylelint": "16.8.0",

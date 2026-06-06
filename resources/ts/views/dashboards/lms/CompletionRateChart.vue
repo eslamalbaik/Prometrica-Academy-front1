@@ -1,5 +1,7 @@
 <script setup lang="ts">
-const series = ref([73])
+const seriesData = ref<number[]>([73])
+
+const series = computed(() => seriesData.value || [0])
 
 const chartOptions = computed(() => ({
   chart: {
@@ -57,6 +59,7 @@ const courseStats = ref([
 
     <VCardText class="d-flex flex-column align-center">
       <VueApexCharts
+        v-if="seriesData && seriesData.length > 0 && !seriesData.includes(undefined as any)"
         type="radialBar"
         :height="220"
         :options="chartOptions"

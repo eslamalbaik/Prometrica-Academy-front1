@@ -1,8 +1,10 @@
 <script setup lang="ts">
-const series = ref([
+const seriesData = ref<number[]>([45, 52, 38, 65, 73, 55, 68, 81, 96, 89, 78, 110])
+
+const series = computed(() => [
   {
     name: 'New Students',
-    data: [45, 52, 38, 65, 73, 55, 68, 81, 96, 89, 78, 110],
+    data: seriesData.value || [0],
   },
 ])
 
@@ -59,6 +61,7 @@ const chartOptions = computed(() => ({
 
     <VCardText>
       <VueApexCharts
+        v-if="seriesData && seriesData.length > 0 && !seriesData.includes(undefined as any)"
         type="bar"
         :height="280"
         :options="chartOptions"

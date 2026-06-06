@@ -13,6 +13,7 @@ import { defineConfig } from 'vite'
 import MetaLayouts from 'vite-plugin-vue-meta-layouts'
 import vuetify from 'vite-plugin-vuetify'
 import svgLoader from 'vite-svg-loader'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -106,6 +107,12 @@ export default defineConfig({
       ],
     }),
     svgLoader(),
+    visualizer({
+      filename: 'stats.html',
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+    }),
   ],
   define: { 'process.env': {} },
   resolve: {
@@ -129,11 +136,17 @@ export default defineConfig({
             if (id.includes('vuetify')) {
               return 'vendor_vuetify'
             }
-            if (id.includes('vue') || id.includes('pinia') || id.includes('vue-router')) {
+            if (id.includes('vue-router') || id.includes('@vue/')) {
               return 'vendor_vue'
+            }
+            if (id.includes('pinia')) {
+              return 'vendor_state'
             }
             if (id.includes('apexcharts') || id.includes('vue3-apexcharts')) {
               return 'vendor_charts'
+            }
+            if (id.includes('@intlify') || id.includes('vue-i18n')) {
+              return 'vendor_i18n'
             }
             // ✅ React micro-frontend — code-split into its own vendor chunk
             if (id.includes('react') || id.includes('framer-motion') || id.includes('lucide-react')) {
@@ -154,10 +167,13 @@ export default defineConfig({
     },
     include: [
       'vue',
+      'vue-router',
+      'pinia',
       'vuetify',
       'axios',
       'vue3-apexcharts',
       'apexcharts',
+      'vue-i18n',
       // ✅ Pre-bundle React deps for faster cold starts
       'react',
       'react-dom/client',

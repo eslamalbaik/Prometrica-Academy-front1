@@ -1,8 +1,10 @@
 <script setup lang="ts">
-const series = ref([
+const seriesData = ref<number[]>([4500, 5200, 4800, 6300, 5900, 7100, 6800, 7500, 8200, 9100, 8800, 12340])
+
+const series = computed(() => [
   {
     name: 'Revenue',
-    data: [4500, 5200, 4800, 6300, 5900, 7100, 6800, 7500, 8200, 9100, 8800, 12340],
+    data: seriesData.value || [0],
   },
 ])
 
@@ -82,6 +84,7 @@ const chartOptions = computed(() => ({
 
     <VCardText>
       <VueApexCharts
+        v-if="seriesData && seriesData.length > 0 && !seriesData.includes(undefined as any)"
         type="area"
         :height="320"
         :options="chartOptions"

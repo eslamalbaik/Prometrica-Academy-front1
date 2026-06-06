@@ -39,6 +39,7 @@ declare module 'vue' {
     MoreBtn: typeof import('./resources/ts/@core/components/MoreBtn.vue')['default']
     Notifications: typeof import('./resources/ts/@core/components/Notifications.vue')['default']
     ProductDescriptionEditor: typeof import('./resources/ts/@core/components/ProductDescriptionEditor.vue')['default']
+    QuizPlayer: typeof import('./resources/ts/components/quiz/QuizPlayer.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScrollToTop: typeof import('./resources/ts/@core/components/ScrollToTop.vue')['default']
@@ -47,5 +48,6 @@ declare module 'vue' {
     TheCustomizer: typeof import('./resources/ts/@core/components/TheCustomizer.vue')['default']
     ThemeSwitcher: typeof import('./resources/ts/@core/components/ThemeSwitcher.vue')['default']
     TiptapEditor: typeof import('./resources/ts/@core/components/TiptapEditor.vue')['default']
+    VueApexCharts: typeof import('vue3-apexcharts')['default']
   }
 }

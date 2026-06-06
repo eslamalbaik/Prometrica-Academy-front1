@@ -6,6 +6,7 @@ import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { initConfigStore, useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
+import { useAuthStore } from '@/stores/authStore'
 
 const route = useRoute()
 const { global } = useTheme()
@@ -15,10 +16,23 @@ initCore()
 initConfigStore()
 
 const configStore = useConfigStore()
+const authStore = useAuthStore()
 </script>
 
 <template>
-  <VLocaleProvider :rtl="configStore.isAppRTL">
+  <!-- Splash Screen / Loader during initial auth check -->
+  <div v-if="authStore.isInitializing" id="loading-bg">
+    <div class="loading-logo">
+      <img src="/logo.png" alt="Logo" />
+    </div>
+    <div class="loading">
+      <div class="effect-1 effects"></div>
+      <div class="effect-2 effects"></div>
+      <div class="effect-3 effects"></div>
+    </div>
+  </div>
+
+  <VLocaleProvider v-else :rtl="configStore.isAppRTL">
     <!-- ℹ️ Conditionally bypass VApp for pure layouts to prevent Vuetify styling collisions -->
     <component 
       :is="route.meta.layout === 'pure' ? 'div' : VApp"
