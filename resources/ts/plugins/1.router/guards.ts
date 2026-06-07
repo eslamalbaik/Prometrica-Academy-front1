@@ -65,12 +65,6 @@ function resolveDocumentTitle(routeName: string | symbol | null | undefined): st
 }
 
 export const setupGuards = (router: _RouterTyped<RouteNamedMap & { [key: string]: any }>) => {
-  // beforeResolve guard to wait for initialization
-  router.beforeResolve(async to => {
-    const authStore = useAuthStore()
-    await waitForAuthInit(authStore)
-  })
-
   router.beforeEach(async to => {
     // Start progress bar
     NProgress.start()
@@ -92,28 +86,34 @@ export const setupGuards = (router: _RouterTyped<RouteNamedMap & { [key: string]
       }
     }
 
-    // Wait for auth initialization before evaluating routes
+    // For unauthenticated-only pages (login), skip waiting for auth init
+    // when there is no stored token — the page loads instantly.
+    if (to.meta.unauthenticatedOnly) {
+      const hasToken = typeof localStorage !== 'undefined' && !!localStorage.getItem('accessToken')
+      if (!hasToken)
+        return undefined
+
+      // Token exists — wait for auth so we can redirect the logged-in user.
+      await waitForAuthInit(authStore)
+      if (authStore.isLoggedIn) {
+        if (authStore.userRole === 'admin')
+          return '/dashboards/lms'
+        redirectStudentToLanding()
+        return false
+      }
+      return undefined
+    }
+
+    // Wait for auth initialization before evaluating protected routes
     await waitForAuthInit(authStore)
 
     const isLoggedIn = authStore.isLoggedIn
     const userRole = authStore.userRole
 
     // Redirect logged-in non-admins (students) to the landing-page student dashboard
-    if (isLoggedIn && userRole !== 'admin' && !to.meta.unauthenticatedOnly) {
+    if (isLoggedIn && userRole !== 'admin') {
       redirectStudentToLanding()
       return false
-    }
-
-    if (to.meta.unauthenticatedOnly) {
-      if (isLoggedIn) {
-        if (userRole === 'admin')
-          return '/dashboards/lms'
-
-        redirectStudentToLanding()
-        return false
-      }
-      else
-        return undefined
     }
 
     if (!isLoggedIn && to.matched.length) {

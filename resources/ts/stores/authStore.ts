@@ -94,6 +94,7 @@ export const useAuthStore = defineStore('auth', {
         return
 
       this.user = normalized
+      this.token = token
       this.isLoggedIn = true
       this.isInitialized = true
       this.isInitializing = false

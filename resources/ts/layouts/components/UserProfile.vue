@@ -7,6 +7,15 @@ const authStore = useAuthStore()
 
 const userData = computed(() => authStore.user)
 
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
+const avatarUrl = computed(() => {
+  const a = (userData.value as any)?.avatar
+  if (!a)
+    return ''
+  // Absolute URLs (e.g. Google) pass through; relative paths get the storage prefix.
+  return /^https?:\/\//.test(a) ? a : `${API_ORIGIN}/storage/${a}`
+})
+
 import api from '@/plugins/axios'
 
 const logout = async () => {
@@ -55,7 +64,7 @@ const userProfileList = computed(() => {
     >
       <VImg
         v-if="userData && userData.avatar"
-        :src="userData.avatar"
+        :src="avatarUrl"
       />
       <VIcon
         v-else
@@ -87,7 +96,7 @@ const userProfileList = computed(() => {
                   >
                     <VImg
                       v-if="userData && userData.avatar"
-                      :src="userData.avatar"
+                      :src="avatarUrl"
                     />
                     <VIcon
                       v-else

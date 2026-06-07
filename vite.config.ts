@@ -129,29 +129,28 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 5000,
+    minify: 'esbuild',
     rollupOptions: {
+      treeshake: true,
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('vuetify')) {
+            if (id.includes('vuetify'))
               return 'vendor_vuetify'
-            }
-            if (id.includes('vue-router') || id.includes('@vue/')) {
+            if (id.includes('vue-router') || id.includes('@vue/'))
               return 'vendor_vue'
-            }
-            if (id.includes('pinia')) {
+            if (id.includes('pinia'))
               return 'vendor_state'
-            }
-            if (id.includes('apexcharts') || id.includes('vue3-apexcharts')) {
+            if (id.includes('apexcharts') || id.includes('vue3-apexcharts'))
               return 'vendor_charts'
-            }
-            if (id.includes('@intlify') || id.includes('vue-i18n')) {
+            if (id.includes('@intlify') || id.includes('vue-i18n'))
               return 'vendor_i18n'
-            }
-            // ✅ React micro-frontend — code-split into its own vendor chunk
-            if (id.includes('react') || id.includes('framer-motion') || id.includes('lucide-react')) {
+            if (id.includes('react') || id.includes('framer-motion') || id.includes('lucide-react'))
               return 'vendor_react_landing'
-            }
+            if (id.includes('mapbox-gl'))
+              return 'vendor_mapbox'
+            if (id.includes('@fullcalendar'))
+              return 'vendor_calendar'
             return 'vendor_core'
           }
         }
@@ -161,28 +160,55 @@ export default defineConfig({
   css: {
     devSourcemap: false,
   },
+  // ─── Pre-transform the most-visited admin pages at server startup ──────────
+  // Vite compiles these (and their imports) before the first navigation so the
+  // section-to-section switch is instant instead of compiling on demand.
+  server: {
+    warmup: {
+      clientFiles: [
+        './resources/ts/App.vue',
+        './resources/ts/pages/dashboards/lms.vue',
+        './resources/ts/pages/courses/index.vue',
+        './resources/ts/pages/courses/create.vue',
+        './resources/ts/pages/courses/[id]/builder.vue',
+        './resources/ts/pages/certificates/index.vue',
+        './resources/ts/pages/notifications.vue',
+        './resources/ts/layouts/components/NavBarNotifications.vue',
+      ],
+    },
+  },
   optimizeDeps: {
     esbuildOptions: {
       sourcemap: false,
     },
+    // Explicitly pre-bundle every heavy dependency. Without this, Vite serves
+    // each module as a separate on-demand request (the 237-request / 34s cold
+    // start). Pre-bundling collapses them into a handful of cached bundles.
     include: [
       'vue',
       'vue-router',
       'pinia',
       'vuetify',
       'axios',
-      'vue3-apexcharts',
-      'apexcharts',
       'vue-i18n',
-      // ✅ Pre-bundle React deps for faster cold starts
-      'react',
-      'react-dom/client',
-      'framer-motion',
-      'lucide-react',
+      '@tanstack/vue-query',
+      '@vueuse/core',
+      '@vueuse/math',
+      'apexcharts',
+      'vue3-apexcharts',
+      'chart.js',
+      'swiper',
+      '@casl/ability',
+      '@casl/vue',
+      '@tiptap/vue-3',
+      '@tiptap/starter-kit',
+      'nprogress',
+      'jwt-decode',
     ],
+    // Only crawl Vue source for dep discovery — exclude the React landing
+    // micro-frontend so React/framer-motion aren't pulled into the admin scan.
     entries: [
       './resources/ts/**/*.vue',
-      './resources/ts/landing/**/*.tsx',
     ],
   },
 })

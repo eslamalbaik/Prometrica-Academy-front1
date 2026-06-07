@@ -50,6 +50,30 @@ const isSuccess = ref(false)
 
 const SUCCESS_DELAY_MS = 500
 
+const getLoginErrorMessage = (err: any) => {
+  // No HTTP response → connection-level failure. Distinguish the cause so the
+  // admin knows whether it's the server, the network/CORS, or a slow boot.
+  if (!err.response) {
+    if (err.code === 'ECONNABORTED')
+      return 'The API server took too long to respond (timeout). It may be starting up — try again in a moment.'
+    if (err.code === 'ERR_NETWORK')
+      return 'Network error: cannot reach the LMS API on port 8000. Check that it is running and CORS allows http://localhost:5173.'
+
+    return 'Cannot reach the API server. Check that the LMS API is running on port 8000.'
+  }
+
+  if (err.response.status === 401 || err.response.status === 422)
+    return err.response.data?.errors?.email?.[0] || 'Invalid admin email or password.'
+
+  if (err.response.status === 419)
+    return 'Login request was rejected by CSRF protection. Make sure the admin app points to the LMS API.'
+
+  if (err.response.status === 429)
+    return 'Too many login attempts. Please wait a minute and try again.'
+
+  return err.response.data?.message || 'Login failed. Please try again.'
+}
+
 const login = async () => {
   isSubmitting.value = true
   isSuccess.value = false
@@ -57,10 +81,13 @@ const login = async () => {
   errors.value.password = undefined
 
   try {
-    const res = await api.post('/login', {
+    const res = await api.post('/api/v1/auth/login', {
       email: credentials.value.email,
       password: credentials.value.password,
     })
+
+    if (!res.data?.user || !res.data?.token)
+      throw new Error('Login response did not include a user and token.')
 
     if (res.data.user.role !== 'admin') {
       errors.value.email = 'Access denied. Admin privileges required.'
@@ -80,12 +107,9 @@ const login = async () => {
     console.error(err)
     isSubmitting.value = false
     isSuccess.value = false
-    if (err.response?.status === 422) {
-      errors.value.email = err.response.data.errors?.email?.[0] || 'Invalid credentials'
-    }
-    else {
-      errors.value.email = 'Login failed. Please try again.'
-    }
+    errors.value.email = err.message === 'Login response did not include a user and token.'
+      ? 'The API login response is missing an auth token. Make sure port 8000 is running the LMS API.'
+      : getLoginErrorMessage(err)
   }
 }
 

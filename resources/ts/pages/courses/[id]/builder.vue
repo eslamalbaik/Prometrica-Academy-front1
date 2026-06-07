@@ -161,6 +161,86 @@ const executeDeleteLesson = async () => {
   } catch (e) { console.error(e) }
   finally { isDeletingLesson.value = false }
 }
+
+// ─── Module Attachments ───────────────────────────────────────────────────────
+const attachmentsMap        = ref<Record<number, any[]>>({})
+const isUploadVisible       = ref(false)
+const isUploading           = ref(false)
+const uploadModuleId        = ref<number | null>(null)
+const uploadFile            = ref<File | null>(null)
+const uploadTitle           = ref('')
+const attachmentToDelete    = ref<any>(null)
+const isDeleteAttachVisible = ref(false)
+const isDeletingAttachment  = ref(false)
+
+const API_STORAGE = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+  : 'http://localhost:8000'
+
+const loadAttachments = async (moduleId: number) => {
+  try {
+    const res = await api.get(`/api/dashboard/modules/${moduleId}/attachments`)
+    attachmentsMap.value[moduleId] = res.data
+  } catch (e) { console.error(e) }
+}
+
+const openUploadDialog = (moduleId: number) => {
+  uploadModuleId.value = moduleId
+  uploadFile.value = null
+  uploadTitle.value = ''
+  isUploadVisible.value = true
+}
+
+const onFileChange = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  uploadFile.value = input.files?.[0] ?? null
+  if (uploadFile.value && !uploadTitle.value)
+    uploadTitle.value = uploadFile.value.name.replace(/\.pdf$/i, '')
+}
+
+const submitUpload = async () => {
+  if (!uploadFile.value || !uploadModuleId.value) return
+  isUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', uploadFile.value)
+    formData.append('title', uploadTitle.value || uploadFile.value.name)
+    await api.post(`/api/dashboard/modules/${uploadModuleId.value}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    isUploadVisible.value = false
+    await loadAttachments(uploadModuleId.value)
+  } catch (e) { console.error(e) }
+  finally { isUploading.value = false }
+}
+
+const confirmDeleteAttachment = (att: any) => {
+  attachmentToDelete.value = att
+  isDeleteAttachVisible.value = true
+}
+
+const executeDeleteAttachment = async () => {
+  isDeletingAttachment.value = true
+  try {
+    await api.delete(`/api/dashboard/attachments/${attachmentToDelete.value.id}`)
+    const modId = attachmentToDelete.value.module_id
+    isDeleteAttachVisible.value = false
+    attachmentToDelete.value = null
+    await loadAttachments(modId)
+  } catch (e) { console.error(e) }
+  finally { isDeletingAttachment.value = false }
+}
+
+const formatSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// load attachments when a module panel opens
+const onPanelOpen = (moduleId: number) => {
+  if (!attachmentsMap.value[moduleId]) loadAttachments(moduleId)
+}
 </script>
 
 <template>
@@ -187,7 +267,7 @@ const executeDeleteLesson = async () => {
     </VAlert>
 
     <!-- Modules Accordion -->
-    <VExpansionPanels v-else class="mt-2" variant="accordion">
+    <VExpansionPanels v-else class="mt-2" variant="accordion" @update:model-value="v => { if (v !== undefined) onPanelOpen(modules[v]?.id) }">
       <VExpansionPanel v-for="(mod, mIdx) in modules" :key="mod.id">
         <VExpansionPanelTitle>
           <div class="d-flex align-center gap-3 w-100">
@@ -266,11 +346,70 @@ const executeDeleteLesson = async () => {
             <VBtn size="small" variant="outlined" color="primary" prepend-icon="tabler-plus" @click="openAddLesson(mod.id)">
               {{ $t('Add Lesson') }}
             </VBtn>
-            <!-- A real implementation would have openAddQuiz(mod.id), keeping simple for this iteration -->
             <VBtn size="small" variant="outlined" color="secondary" prepend-icon="tabler-plus" to="/quizzes/exams">
               {{ $t('Manage Quizzes') }}
             </VBtn>
           </div>
+
+          <VDivider class="my-4" />
+
+          <!-- ── PDF Attachments Section ───────────────────────────────── -->
+          <div class="d-flex justify-space-between align-center mb-3">
+            <div class="d-flex align-center gap-2">
+              <VIcon icon="tabler-paperclip" size="18" color="warning" />
+              <span class="text-body-1 font-weight-semibold">{{ $t('PDF Attachments') }}</span>
+              <VChip size="x-small" variant="tonal" color="warning">
+                {{ (attachmentsMap[mod.id] || []).length }}
+              </VChip>
+            </div>
+            <VBtn size="small" variant="tonal" color="warning" prepend-icon="tabler-upload" @click="openUploadDialog(mod.id)">
+              {{ $t('Upload PDF') }}
+            </VBtn>
+          </div>
+
+          <!-- Attachments list -->
+          <div v-if="attachmentsMap[mod.id] && attachmentsMap[mod.id].length > 0">
+            <VList lines="one" density="compact">
+              <VListItem
+                v-for="att in attachmentsMap[mod.id]"
+                :key="att.id"
+                rounded="lg"
+                class="mb-1 px-3"
+                border
+              >
+                <template #prepend>
+                  <VAvatar color="error" variant="tonal" size="32" rounded>
+                    <VIcon icon="tabler-file-type-pdf" size="18" />
+                  </VAvatar>
+                </template>
+                <template #title>
+                  <span class="text-body-2 font-weight-medium">{{ att.title }}</span>
+                </template>
+                <template #subtitle>
+                  <span class="text-caption text-medium-emphasis">{{ formatSize(att.file_size) }}</span>
+                </template>
+                <template #append>
+                  <VBtn
+                    icon="tabler-download"
+                    variant="text"
+                    size="small"
+                    color="primary"
+                    :href="`${API_STORAGE}/storage/${att.file_path}`"
+                    target="_blank"
+                  />
+                  <VBtn
+                    icon="tabler-trash"
+                    variant="text"
+                    size="small"
+                    color="error"
+                    @click="confirmDeleteAttachment({ ...att, module_id: mod.id })"
+                  />
+                </template>
+              </VListItem>
+            </VList>
+          </div>
+          <p v-else class="text-caption text-medium-emphasis mb-1">{{ $t('No attachments yet.') }}</p>
+
         </VExpansionPanelText>
       </VExpansionPanel>
     </VExpansionPanels>
@@ -459,6 +598,88 @@ const executeDeleteLesson = async () => {
           <VSpacer />
           <VBtn variant="text" @click="isDeleteLessonVisible = false">{{ $t('Cancel') }}</VBtn>
           <VBtn color="error" :loading="isDeletingLesson" @click="executeDeleteLesson">
+            {{ $t('Yes, Delete') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- ─── Upload PDF Dialog ────────────────────────────────────────────────── -->
+    <VDialog v-model="isUploadVisible" max-width="500">
+      <VCard>
+        <VCardItem>
+          <VCardTitle class="d-flex align-center gap-2">
+            <VIcon icon="tabler-file-type-pdf" color="error" />
+            {{ $t('Upload PDF Attachment') }}
+          </VCardTitle>
+        </VCardItem>
+        <VCardText>
+          <VRow>
+            <VCol cols="12">
+              <VTextField
+                v-model="uploadTitle"
+                :label="$t('Title (optional)')"
+                variant="outlined"
+                :placeholder="$t('Leave blank to use filename')"
+              />
+            </VCol>
+            <VCol cols="12">
+              <div
+                class="rounded-lg border-2 border-dashed pa-6 text-center cursor-pointer"
+                style="border-color: rgba(var(--v-theme-warning), 0.5); background: rgba(var(--v-theme-warning), 0.04);"
+                @click="($refs.pdfInput as HTMLInputElement).click()"
+              >
+                <VIcon icon="tabler-upload" size="36" color="warning" class="mb-2" />
+                <p class="text-body-2 font-weight-semibold text-warning">
+                  {{ uploadFile ? uploadFile.name : $t('Click to choose PDF file') }}
+                </p>
+                <p v-if="uploadFile" class="text-caption text-medium-emphasis">
+                  {{ formatSize(uploadFile.size) }}
+                </p>
+                <p v-else class="text-caption text-medium-emphasis">PDF • {{ $t('Max 20MB') }}</p>
+                <input
+                  ref="pdfInput"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  class="d-none"
+                  @change="onFileChange"
+                />
+              </div>
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="isUploadVisible = false">{{ $t('Cancel') }}</VBtn>
+          <VBtn
+            color="warning"
+            :loading="isUploading"
+            :disabled="!uploadFile"
+            prepend-icon="tabler-upload"
+            @click="submitUpload"
+          >
+            {{ $t('Upload') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- ─── Delete Attachment Confirm ────────────────────────────────────────── -->
+    <VDialog v-model="isDeleteAttachVisible" max-width="400">
+      <VCard>
+        <VCardItem>
+          <VCardTitle class="d-flex align-center gap-2 text-error">
+            <VIcon icon="tabler-trash" color="error" />
+            {{ $t('Delete Attachment') }}
+          </VCardTitle>
+        </VCardItem>
+        <VCardText>
+          <p>{{ $t('Delete attachment') }} <strong>{{ attachmentToDelete?.title }}</strong>?</p>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="isDeleteAttachVisible = false">{{ $t('Cancel') }}</VBtn>
+          <VBtn color="error" :loading="isDeletingAttachment" @click="executeDeleteAttachment">
             {{ $t('Yes, Delete') }}
           </VBtn>
         </VCardActions>

@@ -18,6 +18,7 @@ const notifications = ref<any[]>([])
 const unreadCount = ref(0)
 const totalPages = ref(1)
 const isLoading = ref(false)
+const isError = ref(false)
 
 const formatTime = (dateStr: string) => {
   const date = new Date(dateStr)
@@ -81,15 +82,19 @@ const mapNotifications = () => {
 
 const fetchNotifications = async () => {
   isLoading.value = true
+  isError.value = false
   try {
     const res = await api.get(`/api/admin/notifications?page=${page.value}`)
-    const paginator = res.data.notifications
+    const paginator = res.data?.notifications || {}
     dbNotifications.value = paginator.data || []
-    unreadCount.value = res.data.unread_count || 0
+    unreadCount.value = res.data?.unread_count || 0
     totalPages.value = paginator.last_page || 1
     mapNotifications()
   } catch (err) {
     console.error('Error fetching notifications:', err)
+    isError.value = true
+    dbNotifications.value = []
+    notifications.value = []
   } finally {
     isLoading.value = false
   }
@@ -166,7 +171,29 @@ onMounted(fetchNotifications)
         color="primary"
       />
 
-      <VCardText v-if="!isLoading && notifications.length === 0" class="text-center py-12">
+      <!-- ERROR state: retry-safe boundary -->
+      <VCardText v-if="!isLoading && isError" class="text-center py-12">
+        <VIcon
+          icon="tabler-alert-triangle"
+          size="64"
+          color="error"
+          class="mb-3"
+        />
+        <p class="text-h6 text-medium-emphasis mb-4">
+          {{ $t('notifications.load_error', 'Could not load notifications.') }}
+        </p>
+        <VBtn
+          color="primary"
+          variant="tonal"
+          prepend-icon="tabler-refresh"
+          @click="fetchNotifications"
+        >
+          {{ $t('retry', 'Retry') }}
+        </VBtn>
+      </VCardText>
+
+      <!-- EMPTY state -->
+      <VCardText v-else-if="!isLoading && notifications.length === 0" class="text-center py-12">
         <VIcon
           icon="tabler-mail-opened"
           size="64"
@@ -178,6 +205,7 @@ onMounted(fetchNotifications)
         </p>
       </VCardText>
 
+      <!-- SUCCESS state -->
       <VList v-else class="py-0">
         <template v-for="(item, index) in notifications" :key="item.id">
           <VDivider v-if="index > 0" />

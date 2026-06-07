@@ -27,6 +27,7 @@ declare module 'vue-router/auto-routes' {
     'courses-categories': RouteRecordInfo<'courses-categories', '/courses/categories', Record<never, never>, Record<never, never>>,
     'courses-create': RouteRecordInfo<'courses-create', '/courses/create', Record<never, never>, Record<never, never>>,
     'dashboards-lms': RouteRecordInfo<'dashboards-lms', '/dashboards/lms', Record<never, never>, Record<never, never>>,
+    'digital-products': RouteRecordInfo<'digital-products', '/digital-products', Record<never, never>, Record<never, never>>,
     'forgot-password': RouteRecordInfo<'forgot-password', '/forgot-password', Record<never, never>, Record<never, never>>,
     'media': RouteRecordInfo<'media', '/media', Record<never, never>, Record<never, never>>,
     'not-authorized': RouteRecordInfo<'not-authorized', '/not-authorized', Record<never, never>, Record<never, never>>,

@@ -47,6 +47,11 @@ export default [
       { title: 'Subscriptions', to: 'payments-subscriptions' },
     ],
   },
+  {
+    title: 'Digital Products',
+    icon: { icon: 'tabler-shopping-bag' },
+    to: 'digital-products',
+  },
 
   { heading: 'Engagement' },
   {

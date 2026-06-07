@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 
 definePage({ meta: { requiresAdmin: true } })
 
-const activeTab = ref(0)
+const queryClient = useQueryClient()
+const activeTab   = ref(0)
+
+const API_BASE = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+  : 'http://localhost:8000'
 
 // ─── Issued Certificates ──────────────────────────────────────────────────────
 const { data: issuedData, isLoading: isLoadingIssued } = useQuery({
   queryKey: ['admin-certificates'],
-  queryFn: async () => {
-    const res = await api.get('/api/dashboard/certificates')
-    return res.data
-  },
+  queryFn: async () => (await api.get('/api/dashboard/certificates')).data,
 })
 
 const certificates = computed(() => issuedData.value?.data || [])
@@ -26,26 +28,83 @@ const pagination   = computed(() => ({
 // ─── Stats (per-course) ───────────────────────────────────────────────────────
 const { data: statsData, isLoading: isLoadingStats } = useQuery({
   queryKey: ['admin-certificates-stats'],
-  queryFn: async () => {
-    const res = await api.get('/api/dashboard/certificates/stats')
-    return res.data
-  },
+  queryFn: async () => (await api.get('/api/dashboard/certificates/stats')).data,
 })
 
 const courseStats = computed(() => statsData.value || [])
 
+// ─── Students & Courses for Issue Dialog ─────────────────────────────────────
+const { data: studentsData } = useQuery({
+  queryKey: ['admin-students-list'],
+  queryFn: async () => {
+    const res = await api.get('/api/dashboard/students?per_page=200')
+    return res.data?.data || res.data || []
+  },
+})
+const { data: coursesData } = useQuery({
+  queryKey: ['admin-courses-list'],
+  queryFn: async () => {
+    const res = await api.get('/api/dashboard/courses')
+    return res.data?.data || res.data || []
+  },
+})
+const students = computed(() => studentsData.value || [])
+const courses  = computed(() => coursesData.value  || [])
+
+// ─── Issue Certificate Dialog (admin manual) ──────────────────────────────────
+const isIssueOpen     = ref(false)
+const isIssuing       = ref(false)
+const issueForm       = ref({ user_id: null as number | null, course_id: null as number | null })
+const issueSuccess    = ref('')
+const issueError      = ref('')
+
+const openIssueDialog = () => {
+  issueForm.value  = { user_id: null, course_id: null }
+  issueSuccess.value = ''
+  issueError.value   = ''
+  isIssueOpen.value  = true
+}
+
+const submitIssue = async () => {
+  if (!issueForm.value.user_id || !issueForm.value.course_id) return
+  isIssuing.value    = true
+  issueSuccess.value = ''
+  issueError.value   = ''
+  try {
+    const res = await api.post('/api/dashboard/certificates/issue', issueForm.value)
+    issueSuccess.value = res.data.message
+    queryClient.invalidateQueries({ queryKey: ['admin-certificates'] })
+    queryClient.invalidateQueries({ queryKey: ['admin-certificates-stats'] })
+  } catch (e: any) {
+    issueError.value = e.response?.data?.message || 'Failed to issue certificate.'
+  } finally {
+    isIssuing.value = false
+  }
+}
+
+// ─── Download Certificate ─────────────────────────────────────────────────────
+const downloadCertificate = (uuid: string, courseName: string) => {
+  const url = `${API_BASE}/api/certificates/${uuid}/download`
+  const a   = document.createElement('a')
+  a.href    = url
+  a.download = `certificate-${courseName.toLowerCase().replace(/\s+/g, '-')}.pdf`
+  a.target  = '_blank'
+  a.click()
+}
+
 // ─── Verify Dialog ────────────────────────────────────────────────────────────
-const isVerifyOpen   = ref(false)
-const verifyUuid     = ref('')
-const isVerifying    = ref(false)
-const verifyResult   = ref<any>(null)
-const verifyError    = ref('')
+const isVerifyOpen  = ref(false)
+const verifyUuid    = ref('')
+const isVerifying   = ref(false)
+const verifyResult  = ref<any>(null)
+const verifyError   = ref('')
 
 const openVerify = (uuid: string) => {
-  verifyUuid.value    = uuid
-  verifyResult.value  = null
-  verifyError.value   = ''
-  isVerifyOpen.value  = true
+  verifyUuid.value   = uuid
+  verifyResult.value = null
+  verifyError.value  = ''
+  isVerifyOpen.value = true
+  doVerify()
 }
 
 const doVerify = async () => {
@@ -63,28 +122,35 @@ const doVerify = async () => {
 }
 
 const thumbnailUrl = (path: string | null) =>
-  path ? `http://localhost:8000/storage/${path}` : null
+  path ? `${API_BASE}/storage/${path}` : null
 </script>
 
 <template>
   <VCard>
     <VCardItem>
-      <VCardTitle class="d-flex align-center gap-2">
-        <VIcon icon="tabler-certificate" />
+      <VCardTitle class="d-flex align-center gap-2 flex-wrap">
+        <VIcon icon="tabler-certificate" color="primary" />
         {{ $t('Certificates') }}
-        <VChip size="small" color="primary" class="ms-2">{{ pagination.total }}</VChip>
+        <VChip size="small" color="primary" class="ms-1">{{ pagination.total }}</VChip>
+        <VSpacer />
+        <VBtn
+          color="primary"
+          prepend-icon="tabler-plus"
+          size="small"
+          @click="openIssueDialog"
+        >
+          {{ $t('Issue Certificate') }}
+        </VBtn>
       </VCardTitle>
-      <VCardSubtitle>{{ $t('Issued certificates and per-course stats') }}</VCardSubtitle>
+      <VCardSubtitle>{{ $t('Manage and issue certificates to students') }}</VCardSubtitle>
     </VCardItem>
 
-    <!-- Tabs -->
     <VCardText class="pb-0">
       <VTabs v-model="activeTab">
         <VTab>{{ $t('Issued Certificates') }}</VTab>
         <VTab>{{ $t('By Course') }}</VTab>
       </VTabs>
     </VCardText>
-
     <VDivider />
 
     <!-- ─── Tab 0: Issued Certificates ────────────────────────────────────── -->
@@ -110,7 +176,6 @@ const thumbnailUrl = (path: string | null) =>
             </td>
           </tr>
           <tr v-for="cert in certificates" :key="cert.id">
-            <!-- Student -->
             <td>
               <div class="d-flex align-center gap-2">
                 <VAvatar color="primary" variant="tonal" size="34">
@@ -123,7 +188,6 @@ const thumbnailUrl = (path: string | null) =>
               </div>
             </td>
 
-            <!-- Course -->
             <td>
               <div class="d-flex align-center gap-2">
                 <VAvatar rounded size="32" color="secondary" variant="tonal">
@@ -134,20 +198,29 @@ const thumbnailUrl = (path: string | null) =>
               </div>
             </td>
 
-            <!-- Category -->
             <td>
-              <VChip size="small" color="info" variant="tonal">
-                {{ cert.course?.category || '—' }}
-              </VChip>
+              <VChip size="small" color="info" variant="tonal">{{ cert.course?.category || '—' }}</VChip>
             </td>
 
-            <!-- Issued At -->
             <td class="text-caption text-medium-emphasis">
               {{ new Date(cert.issued_at).toLocaleDateString() }}
             </td>
 
-            <!-- Actions -->
-            <td class="text-center">
+            <td class="text-center" style="white-space:nowrap;">
+              <!-- Download PDF -->
+              <VTooltip text="Download Certificate PDF" location="top">
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    icon="tabler-download"
+                    variant="text"
+                    size="small"
+                    color="primary"
+                    @click="downloadCertificate(cert.uuid, cert.course?.title || 'certificate')"
+                  />
+                </template>
+              </VTooltip>
+              <!-- Verify -->
               <VTooltip text="Verify Certificate" location="top">
                 <template #activator="{ props }">
                   <VBtn
@@ -171,11 +244,9 @@ const thumbnailUrl = (path: string | null) =>
       <div v-if="isLoadingStats" class="d-flex justify-center pa-8">
         <VProgressCircular indeterminate color="primary" />
       </div>
-
       <div v-else-if="courseStats.length === 0" class="text-center text-medium-emphasis pa-8">
         {{ $t('No certificates issued yet.') }}
       </div>
-
       <VTable v-else class="border rounded">
         <thead>
           <tr>
@@ -210,35 +281,107 @@ const thumbnailUrl = (path: string | null) =>
     </VCardText>
   </VCard>
 
+  <!-- ─── Issue Certificate Dialog ─────────────────────────────────────────── -->
+  <VDialog v-model="isIssueOpen" max-width="520">
+    <VCard>
+      <VCardItem>
+        <VCardTitle class="d-flex align-center gap-2">
+          <VIcon icon="tabler-certificate" color="primary" />
+          {{ $t('Issue Certificate Manually') }}
+        </VCardTitle>
+        <VCardSubtitle>{{ $t('Grant a certificate directly to any student') }}</VCardSubtitle>
+      </VCardItem>
+
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <VAutocomplete
+              v-model="issueForm.user_id"
+              :items="students"
+              item-title="name"
+              item-value="id"
+              :label="$t('Select Student')"
+              variant="outlined"
+              prepend-inner-icon="tabler-user"
+              :no-data-text="$t('No students found')"
+            >
+              <template #item="{ item, props }">
+                <VListItem v-bind="props">
+                  <template #subtitle>{{ item.raw.email }}</template>
+                </VListItem>
+              </template>
+            </VAutocomplete>
+          </VCol>
+          <VCol cols="12">
+            <VAutocomplete
+              v-model="issueForm.course_id"
+              :items="courses"
+              item-title="title"
+              item-value="id"
+              :label="$t('Select Course')"
+              variant="outlined"
+              prepend-inner-icon="tabler-book"
+              :no-data-text="$t('No courses found')"
+            />
+          </VCol>
+        </VRow>
+
+        <VAlert v-if="issueSuccess" type="success" variant="tonal" class="mt-3" closable>
+          {{ issueSuccess }}
+        </VAlert>
+        <VAlert v-if="issueError" type="error" variant="tonal" class="mt-3" closable>
+          {{ issueError }}
+        </VAlert>
+      </VCardText>
+
+      <VCardActions>
+        <VSpacer />
+        <VBtn variant="text" @click="isIssueOpen = false">{{ $t('Close') }}</VBtn>
+        <VBtn
+          color="primary"
+          :loading="isIssuing"
+          :disabled="!issueForm.user_id || !issueForm.course_id"
+          prepend-icon="tabler-certificate"
+          @click="submitIssue"
+        >
+          {{ $t('Issue Certificate') }}
+        </VBtn>
+      </VCardActions>
+    </VCard>
+  </VDialog>
+
   <!-- ─── Verify Dialog ──────────────────────────────────────────────────────── -->
   <VDialog v-model="isVerifyOpen" max-width="480">
     <VCard>
       <VCardItem>
         <VCardTitle class="d-flex align-center gap-2">
           <VIcon icon="tabler-shield-check" color="success" />
-          {{ $t('Verify Certificate') }}
+          {{ $t('Certificate Verification') }}
         </VCardTitle>
       </VCardItem>
 
       <VCardText>
-        <VTextField
-          v-model="verifyUuid"
-          :label="$t('Certificate UUID')"
-          variant="outlined"
-          density="compact"
-          class="mb-4"
-          readonly
-        />
+        <div v-if="isVerifying" class="d-flex justify-center pa-4">
+          <VProgressCircular indeterminate color="success" />
+        </div>
 
-        <!-- Result -->
-        <VAlert v-if="verifyResult" type="success" variant="tonal" class="mb-2">
-          <div class="font-weight-bold mb-1">✅ {{ $t('Valid Certificate') }}</div>
-          <div class="text-body-2">{{ $t('Student') }}: <strong>{{ verifyResult.student }}</strong></div>
-          <div class="text-body-2">{{ $t('Course') }}: <strong>{{ verifyResult.course }}</strong></div>
-          <div class="text-body-2">{{ $t('Issued') }}: <strong>{{ verifyResult.issued_at }}</strong></div>
+        <VAlert v-else-if="verifyResult" type="success" variant="tonal">
+          <div class="font-weight-bold mb-2 text-body-1">✅ {{ $t('Valid Certificate') }}</div>
+          <div class="text-body-2 mb-1">
+            <strong>{{ $t('Student') }}:</strong> {{ verifyResult.student }}
+          </div>
+          <div class="text-body-2 mb-1">
+            <strong>{{ $t('Course') }}:</strong> {{ verifyResult.course }}
+          </div>
+          <div class="text-body-2 mb-1">
+            <strong>{{ $t('Issued') }}:</strong> {{ verifyResult.issued_at }}
+          </div>
+          <div class="text-caption text-medium-emphasis mt-2 font-weight-mono">
+            ID: {{ verifyResult.uuid }}
+          </div>
         </VAlert>
 
-        <VAlert v-if="verifyError" type="error" variant="tonal">
+        <VAlert v-else-if="verifyError" type="error" variant="tonal">
           {{ verifyError }}
         </VAlert>
       </VCardText>
@@ -246,9 +389,6 @@ const thumbnailUrl = (path: string | null) =>
       <VCardActions>
         <VSpacer />
         <VBtn variant="text" @click="isVerifyOpen = false">{{ $t('Close') }}</VBtn>
-        <VBtn color="success" :loading="isVerifying" @click="doVerify">
-          {{ $t('Verify') }}
-        </VBtn>
       </VCardActions>
     </VCard>
   </VDialog>

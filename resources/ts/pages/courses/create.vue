@@ -32,6 +32,7 @@ const form = ref({
   is_free: false,
   price: null,
   discount_price: null,
+  access_days: null,
   include_in_subscription: false,
   status: 'Draft'
 })
@@ -252,6 +253,17 @@ const submitCourse = () => {
                   class="mb-4"
                   :disabled="form.is_free"
                   :error-messages="validationErrors.discount_price"
+                />
+                <VTextField
+                  v-model="form.access_days"
+                  :label="$t('Access duration (days)')"
+                  :hint="$t('Leave empty for lifetime access')"
+                  persistent-hint
+                  placeholder="365"
+                  type="number"
+                  min="1"
+                  class="mb-4"
+                  :error-messages="validationErrors.access_days"
                 />
                 <VSwitch v-model="form.include_in_subscription" :label="$t('Include in Subscription')" class="mb-4" :error-messages="validationErrors.include_in_subscription" />
               </VCol>
