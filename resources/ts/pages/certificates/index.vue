@@ -83,24 +83,53 @@ const submitIssue = async () => {
 }
 
 // ─── Download Certificate ─────────────────────────────────────────────────────
-const downloadCertificate = (uuid: string, courseName: string) => {
-  const url = `${API_BASE}/api/certificates/${uuid}/download`
-  const a   = document.createElement('a')
-  a.href    = url
-  a.download = `certificate-${courseName.toLowerCase().replace(/\s+/g, '-')}.pdf`
-  a.target  = '_blank'
-  a.click()
+const downloadCertificate = async (ulid: string, courseName: string) => {
+  try {
+    const res = await api.get(`/api/v1/certificates/${ulid}/download`)
+    if (res.data.download_url) {
+      window.location.href = res.data.download_url
+    }
+  } catch (e) {
+    console.error('Failed to download certificate:', e)
+  }
+}
+
+// ─── Regenerate Certificate ───────────────────────────────────────────────────
+const regeneratingUlid = ref<string | null>(null)
+const regenerateSuccess = ref('')
+const regenerateError   = ref('')
+
+const regenerateCertificate = async (ulid: string) => {
+  regeneratingUlid.value = ulid
+  regenerateSuccess.value = ''
+  regenerateError.value   = ''
+  try {
+    await api.post(`/api/dashboard/certificates/${ulid}/regenerate`)
+    regenerateSuccess.value = 'Certificate regeneration started. Download again in a few seconds.'
+    setTimeout(() => { regenerateSuccess.value = '' }, 5000)
+  } catch (e: any) {
+    regenerateError.value = e.response?.data?.message || 'Failed to regenerate certificate.'
+    setTimeout(() => { regenerateError.value = '' }, 5000)
+  } finally {
+    regeneratingUlid.value = null
+  }
 }
 
 // ─── Verify Dialog ────────────────────────────────────────────────────────────
 const isVerifyOpen  = ref(false)
-const verifyUuid    = ref('')
+const verifyUlid    = ref('')
+const verifyUserId  = ref<number | null>(null)
+const verifyCourseId = ref<number | null>(null)
+const verifySignature = ref('')
 const isVerifying   = ref(false)
 const verifyResult  = ref<any>(null)
 const verifyError   = ref('')
 
-const openVerify = (uuid: string) => {
-  verifyUuid.value   = uuid
+const openVerify = (cert: any) => {
+  verifyUlid.value      = cert.ulid
+  verifyUserId.value    = cert.user_id
+  verifyCourseId.value  = cert.course_id
+  verifySignature.value = cert.signature
   verifyResult.value = null
   verifyError.value  = ''
   isVerifyOpen.value = true
@@ -112,7 +141,13 @@ const doVerify = async () => {
   verifyResult.value = null
   verifyError.value  = ''
   try {
-    const res = await api.get(`/api/certificates/${verifyUuid.value}/verify`)
+    const res = await api.get(`/api/certificates/${verifyUlid.value}/verify`, {
+      params: {
+        signature: verifySignature.value,
+        userId: verifyUserId.value,
+        courseId: verifyCourseId.value
+      }
+    })
     verifyResult.value = res.data
   } catch (e: any) {
     verifyError.value = e.response?.data?.message || 'Certificate not found.'
@@ -152,6 +187,16 @@ const thumbnailUrl = (path: string | null) =>
       </VTabs>
     </VCardText>
     <VDivider />
+
+    <!-- ─── Regenerate Alerts ────────────────────────────────────────────── -->
+    <VCardText v-if="regenerateSuccess || regenerateError" class="pb-0">
+      <VAlert v-if="regenerateSuccess" type="success" variant="tonal" closable class="mb-2">
+        {{ regenerateSuccess }}
+      </VAlert>
+      <VAlert v-if="regenerateError" type="error" variant="tonal" closable class="mb-2">
+        {{ regenerateError }}
+      </VAlert>
+    </VCardText>
 
     <!-- ─── Tab 0: Issued Certificates ────────────────────────────────────── -->
     <VCardText v-if="activeTab === 0">
@@ -216,7 +261,7 @@ const thumbnailUrl = (path: string | null) =>
                     variant="text"
                     size="small"
                     color="primary"
-                    @click="downloadCertificate(cert.uuid, cert.course?.title || 'certificate')"
+                    @click="downloadCertificate(cert.ulid, cert.course?.title || 'certificate')"
                   />
                 </template>
               </VTooltip>
@@ -229,7 +274,21 @@ const thumbnailUrl = (path: string | null) =>
                     variant="text"
                     size="small"
                     color="success"
-                    @click="openVerify(cert.uuid)"
+                    @click="openVerify(cert)"
+                  />
+                </template>
+              </VTooltip>
+              <!-- Regenerate -->
+              <VTooltip text="Regenerate Certificate PDF" location="top">
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    icon="tabler-refresh"
+                    variant="text"
+                    size="small"
+                    color="warning"
+                    :loading="regeneratingUlid === cert.ulid"
+                    @click="regenerateCertificate(cert.ulid)"
                   />
                 </template>
               </VTooltip>
@@ -377,7 +436,7 @@ const thumbnailUrl = (path: string | null) =>
             <strong>{{ $t('Issued') }}:</strong> {{ verifyResult.issued_at }}
           </div>
           <div class="text-caption text-medium-emphasis mt-2 font-weight-mono">
-            ID: {{ verifyResult.uuid }}
+            ID: {{ verifyResult.ulid }}
           </div>
         </VAlert>
 

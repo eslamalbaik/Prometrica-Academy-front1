@@ -92,20 +92,73 @@ const executeDeleteModule = async () => {
 const isAddLessonVisible = ref(false)
 const isAddingLesson     = ref(false)
 const activeLessonModuleId = ref<number | null>(null)
-const addLessonForm = ref({ title: '', video_url: '', content: '' })
+const addLessonForm = ref({ title: '', video_url: '', content: '', duration_minutes: null as number | null })
 
 const openAddLesson = (moduleId: number) => {
   activeLessonModuleId.value = moduleId
-  addLessonForm.value = { title: '', video_url: '', content: '' }
+  addLessonForm.value = { title: '', video_url: '', content: '', duration_minutes: null }
   isAddLessonVisible.value = true
+}
+
+// Reads the video duration (in seconds) from the file's metadata in the browser.
+// Bunny Storage Zone does not expose video length via API, so we probe it
+// client-side. Resolves to null if the URL is unreachable or not a video.
+const probeVideoDuration = (url: string): Promise<number | null> => {
+  return new Promise((resolve) => {
+    if (!url) { resolve(null); return }
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    let settled = false
+    const done = (val: number | null) => {
+      if (settled) return
+      settled = true
+      video.removeAttribute('src')
+      resolve(val)
+    }
+    video.onloadedmetadata = () => {
+      const d = video.duration
+      done(Number.isFinite(d) && d > 0 ? Math.round(d) : null)
+    }
+    video.onerror = () => done(null)
+    setTimeout(() => done(null), 10000) // safety timeout
+    video.src = url
+  })
+}
+
+const isProbing = ref(false)
+
+const onVideoUrlChange = async (type: 'add' | 'edit') => {
+  const form = type === 'add' ? addLessonForm.value : editLessonData.value
+  if (!form.video_url) return
+  
+  isProbing.value = true
+  try {
+    const seconds = await probeVideoDuration(form.video_url)
+    if (seconds) {
+      form.duration_minutes = Math.ceil(seconds / 60)
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isProbing.value = false
+  }
 }
 
 const submitAddLesson = async () => {
   isAddingLesson.value = true
   try {
+    let duration_seconds = addLessonForm.value.duration_minutes
+      ? addLessonForm.value.duration_minutes * 60
+      : null
+    if (duration_seconds === null && addLessonForm.value.video_url) {
+      duration_seconds = await probeVideoDuration(addLessonForm.value.video_url)
+    }
     await api.post('/api/dashboard/lessons', {
       module_id: activeLessonModuleId.value,
-      ...addLessonForm.value,
+      title: addLessonForm.value.title,
+      video_url: addLessonForm.value.video_url,
+      content: addLessonForm.value.content,
+      duration_seconds,
     })
     isAddLessonVisible.value = false
     await fetchCurriculum()
@@ -116,8 +169,8 @@ const submitAddLesson = async () => {
 // ─── Edit Lesson Dialog ───────────────────────────────────────────────────────
 const isEditLessonVisible = ref(false)
 const isEditingLesson     = ref(false)
-const editLessonData = ref<{ id: number; title: string; video_url: string; content: string }>({
-  id: 0, title: '', video_url: '', content: ''
+const editLessonData = ref<{ id: number; title: string; video_url: string; content: string; duration_minutes: number | null }>({
+  id: 0, title: '', video_url: '', content: '', duration_minutes: null
 })
 
 const openEditLesson = (lesson: any) => {
@@ -126,6 +179,7 @@ const openEditLesson = (lesson: any) => {
     title:     lesson.title,
     video_url: lesson.video_url || '',
     content:   lesson.content  || '',
+    duration_minutes: lesson.duration_minutes || null,
   }
   isEditLessonVisible.value = true
 }
@@ -133,10 +187,17 @@ const openEditLesson = (lesson: any) => {
 const submitEditLesson = async () => {
   isEditingLesson.value = true
   try {
+    let duration_seconds = editLessonData.value.duration_minutes
+      ? editLessonData.value.duration_minutes * 60
+      : null
+    if (duration_seconds === null && editLessonData.value.video_url) {
+      duration_seconds = await probeVideoDuration(editLessonData.value.video_url)
+    }
     await api.put(`/api/dashboard/lessons/${editLessonData.value.id}`, {
       title:     editLessonData.value.title,
       video_url: editLessonData.value.video_url,
       content:   editLessonData.value.content,
+      duration_seconds,
     })
     isEditLessonVisible.value = false
     await fetchCurriculum()
@@ -517,6 +578,21 @@ const onPanelOpen = (moduleId: number) => {
                 type="url"
                 variant="outlined"
                 prepend-inner-icon="tabler-brand-youtube"
+                @blur="onVideoUrlChange('add')"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VTextField
+                v-model.number="addLessonForm.duration_minutes"
+                :label="$t('Duration (minutes)')"
+                type="number"
+                min="0"
+                variant="outlined"
+                prepend-inner-icon="tabler-clock"
+                :loading="isProbing"
+                placeholder="e.g. 15"
+                persistent-hint
+                :messages="isProbing ? [$t('Probing video URL for duration...')] : []"
               />
             </VCol>
             <VCol cols="12">
@@ -560,6 +636,21 @@ const onPanelOpen = (moduleId: number) => {
                 type="url"
                 variant="outlined"
                 prepend-inner-icon="tabler-brand-youtube"
+                @blur="onVideoUrlChange('edit')"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VTextField
+                v-model.number="editLessonData.duration_minutes"
+                :label="$t('Duration (minutes)')"
+                type="number"
+                min="0"
+                variant="outlined"
+                prepend-inner-icon="tabler-clock"
+                :loading="isProbing"
+                placeholder="e.g. 15"
+                persistent-hint
+                :messages="isProbing ? [$t('Probing video URL for duration...')] : []"
               />
             </VCol>
             <VCol cols="12">

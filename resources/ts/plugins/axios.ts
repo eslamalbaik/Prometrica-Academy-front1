@@ -13,6 +13,15 @@ const axiosIns = axios.create({
   }
 })
 
+// Reads the admin UI language from the `language` cookie (set by vue-i18n).
+function currentLocale(): string {
+  if (typeof document === 'undefined')
+    return 'en'
+  const match = document.cookie.match(/(?:^|;\s*)language=([^;]+)/)
+  const lang = match ? decodeURIComponent(match[1]).slice(0, 2) : 'en'
+  return lang === 'ar' ? 'ar' : 'en'
+}
+
 // Request Interceptor
 axiosIns.interceptors.request.use(config => {
   if (typeof localStorage !== 'undefined') {
@@ -21,6 +30,8 @@ axiosIns.interceptors.request.use(config => {
       config.headers.Authorization = `Bearer ${token}`
     }
   }
+  // Backend returns validation/error messages in this language.
+  config.headers['X-Locale'] = currentLocale()
   return config
 })
 

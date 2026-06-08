@@ -52,6 +52,11 @@ export default [
     icon: { icon: 'tabler-shopping-bag' },
     to: 'digital-products',
   },
+  {
+    title: 'Pricing Plans',
+    icon: { icon: 'tabler-layout-grid' },
+    to: 'pricing-plans',
+  },
 
   { heading: 'Engagement' },
   {
@@ -68,6 +73,11 @@ export default [
     title: 'Notifications',
     icon: { icon: 'tabler-bell' },
     to: 'notifications',
+  },
+  {
+    title: 'FAQ',
+    icon: { icon: 'tabler-help-circle' },
+    to: 'faqs',
   },
   {
     title: 'Media Library',
