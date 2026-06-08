@@ -6,8 +6,8 @@ export const redirects: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     beforeEnter: (to, from) => {
-      // تحويل قسري خارج سيرفر Vuexy تماماً والذهاب لصفحة الهبوط الجديدة
-      window.location.href = 'http://localhost:8080/'
+      // تحويل لصفحة الهبوط الرئيسية
+      window.location.href = import.meta.env.VITE_LANDING_URL || 'https://prometricaacademy.org'
       return false // إيقاف محرك Vue عن إكمال التنقل داخلياً
     }
   }
