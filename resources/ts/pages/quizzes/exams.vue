@@ -341,16 +341,16 @@ const saveQuiz = async () => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="quiz in quizzes" :key="quiz.id">
-            <td class="font-weight-medium">{{ quiz.title }}</td>
+          <tr v-for="quiz in (quizzes ?? [])" :key="quiz.id">
+            <td class="font-weight-medium">{{ quiz.title ?? '—' }}</td>
             <td>
               <VChip size="small" color="primary" variant="tonal">
-                {{ quiz.module?.course?.title || 'Unknown' }}
+                {{ quiz.module?.course?.title ?? 'Unknown' }}
               </VChip>
             </td>
             <td>
               <VChip size="small" color="secondary" variant="outlined">
-                {{ quiz.questions?.length || 0 }} {{ $t('quiz.editor.questions_unit', 'questions') }}
+                {{ quiz.questions?.length ?? 0 }} {{ $t('quiz.editor.questions_unit', 'questions') }}
               </VChip>
             </td>
             <td class="font-weight-bold">{{ quiz.passing_score }}%</td>
@@ -361,7 +361,7 @@ const saveQuiz = async () => {
               </div>
             </td>
           </tr>
-          <tr v-if="quizzes.length === 0">
+          <tr v-if="!quizzes?.length">
             <td colspan="5" class="text-center text-medium-emphasis pa-8">
               {{ $t('quiz.editor.no_exams', 'No exams created yet.') }}
             </td>
