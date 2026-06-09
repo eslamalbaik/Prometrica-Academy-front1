@@ -1,28 +1,51 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/plugins/axios'
+import { useDragAndDrop } from '@formkit/drag-and-drop/vue'
 
 definePage({ meta: { requiresAdmin: true } })
 
 const route    = useRoute()
 const courseId = route.params.id
 
-// ─── Data ────────────────────────────────────────────────────────────────────
-const modules   = ref<any[]>([])
-const isLoading = ref(true)
+const API_STORAGE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const isLoading  = ref(true)
+const isSavingOrder = ref(false)
+
+// ── Module drag-and-drop list ──────────────────────────────────────────────
+const [modulesParent, modules] = useDragAndDrop<any>([], {
+  dragHandle: '.module-drag-handle',
+  onSort: () => { saveModulesOrder() },
+})
+
+// Collapsed state per module id
+const collapsedMap = ref<Record<number, boolean>>({})
+const toggleCollapse = (id: number) => {
+  collapsedMap.value[id] = !collapsedMap.value[id]
+  if (!collapsedMap.value[id] && !attachmentsMap.value[id]) {
+    loadAttachments(id)
+  }
+}
+
+// Per-module lesson drag parents (imperative approach)
+const lessonParents = ref<Record<number, HTMLElement | null>>({})
 
 const fetchCurriculum = async () => {
   try {
     const res = await api.get(`/api/dashboard/courses/${courseId}?include=modules.lessons,modules.quizzes`)
-    modules.value = res.data.course?.modules || []
-    
-    // Sort items for UI
-    modules.value.forEach(mod => {
-      const lessons = mod.lessons?.map((l: any) => ({ ...l, item_type: 'lesson' })) || []
-      const quizzes = mod.quizzes?.map((q: any) => ({ ...q, item_type: 'quiz' })) || []
-      mod.items = [...lessons, ...quizzes].sort((a, b) => a.order - b.order)
+    const raw: any[] = res.data.course?.modules || []
+    raw.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    raw.forEach(mod => {
+      const lessons = (mod.lessons || []).map((l: any) => ({ ...l, item_type: 'lesson' }))
+      const quizzes = (mod.quizzes  || []).map((q: any) => ({ ...q, item_type: 'quiz' }))
+      mod.items = [...lessons, ...quizzes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      // Default all panels open
+      if (collapsedMap.value[mod.id] === undefined) collapsedMap.value[mod.id] = false
     })
+    modules.value = raw
   } catch (e) {
     console.error('Failed to load curriculum', e)
   } finally {
@@ -30,7 +53,47 @@ const fetchCurriculum = async () => {
   }
 }
 
-onMounted(fetchCurriculum)
+fetchCurriculum()
+
+// ── Save module order after drag ──────────────────────────────────────────
+const saveModulesOrder = async () => {
+  isSavingOrder.value = true
+  try {
+    await api.put('/api/dashboard/modules/reorder', {
+      items: modules.value.map((m, i) => ({ id: m.id, order: i })),
+    })
+  } catch (e) { console.error('Failed to save module order', e) }
+  finally { isSavingOrder.value = false }
+}
+
+// ── Save lesson order after drag ──────────────────────────────────────────
+const saveLessonsOrder = async (moduleId: number, items: any[]) => {
+  try {
+    await api.put('/api/dashboard/lessons/reorder', {
+      items: items
+        .filter(i => i.item_type === 'lesson')
+        .map((l, idx) => ({ id: l.id, order: idx })),
+    })
+  } catch (e) { console.error('Failed to save lesson order', e) }
+}
+
+// Register lesson drag for a module when its list mounts
+// We use the imperative dragAndDrop API because modules are dynamic
+import { dragAndDrop } from '@formkit/drag-and-drop/vue'
+
+const initLessonDrag = (el: HTMLElement | null, mod: any) => {
+  if (!el || lessonParents.value[mod.id] === el) return
+  lessonParents.value[mod.id] = el
+  dragAndDrop({
+    parent: el,
+    getValues: () => mod.items,
+    setValues: (vals: any[]) => {
+      mod.items = vals
+      saveLessonsOrder(mod.id, vals)
+    },
+    dragHandle: '.lesson-drag-handle',
+  })
+}
 
 // ─── Add Module Dialog ────────────────────────────────────────────────────────
 const isAddModuleVisible = ref(false)
@@ -89,10 +152,10 @@ const executeDeleteModule = async () => {
 }
 
 // ─── Add Lesson Dialog ────────────────────────────────────────────────────────
-const isAddLessonVisible = ref(false)
-const isAddingLesson     = ref(false)
+const isAddLessonVisible   = ref(false)
+const isAddingLesson       = ref(false)
 const activeLessonModuleId = ref<number | null>(null)
-const addLessonForm = ref({ title: '', video_url: '', content: '', duration_minutes: null as number | null })
+const addLessonForm        = ref({ title: '', video_url: '', content: '', duration_minutes: null as number | null })
 
 const openAddLesson = (moduleId: number) => {
   activeLessonModuleId.value = moduleId
@@ -100,9 +163,6 @@ const openAddLesson = (moduleId: number) => {
   isAddLessonVisible.value = true
 }
 
-// Reads the video duration (in seconds) from the file's metadata in the browser.
-// Bunny Storage Zone does not expose video length via API, so we probe it
-// client-side. Resolves to null if the URL is unreachable or not a video.
 const probeVideoDuration = (url: string): Promise<number | null> => {
   return new Promise((resolve) => {
     if (!url) { resolve(null); return }
@@ -120,7 +180,7 @@ const probeVideoDuration = (url: string): Promise<number | null> => {
       done(Number.isFinite(d) && d > 0 ? Math.round(d) : null)
     }
     video.onerror = () => done(null)
-    setTimeout(() => done(null), 10000) // safety timeout
+    setTimeout(() => done(null), 10000)
     video.src = url
   })
 }
@@ -130,18 +190,12 @@ const isProbing = ref(false)
 const onVideoUrlChange = async (type: 'add' | 'edit') => {
   const form = type === 'add' ? addLessonForm.value : editLessonData.value
   if (!form.video_url) return
-  
   isProbing.value = true
   try {
     const seconds = await probeVideoDuration(form.video_url)
-    if (seconds) {
-      form.duration_minutes = Math.ceil(seconds / 60)
-    }
-  } catch (e) {
-    console.error(e)
-  } finally {
-    isProbing.value = false
-  }
+    if (seconds) form.duration_minutes = Math.ceil(seconds / 60)
+  } catch (e) { console.error(e) }
+  finally { isProbing.value = false }
 }
 
 const submitAddLesson = async () => {
@@ -150,14 +204,14 @@ const submitAddLesson = async () => {
     let duration_seconds = addLessonForm.value.duration_minutes
       ? addLessonForm.value.duration_minutes * 60
       : null
-    if (duration_seconds === null && addLessonForm.value.video_url) {
+    if (duration_seconds === null && addLessonForm.value.video_url)
       duration_seconds = await probeVideoDuration(addLessonForm.value.video_url)
-    }
+
     await api.post('/api/dashboard/lessons', {
-      module_id: activeLessonModuleId.value,
-      title: addLessonForm.value.title,
-      video_url: addLessonForm.value.video_url,
-      content: addLessonForm.value.content,
+      module_id:       activeLessonModuleId.value,
+      title:           addLessonForm.value.title,
+      video_url:       addLessonForm.value.video_url,
+      content:         addLessonForm.value.content,
       duration_seconds,
     })
     isAddLessonVisible.value = false
@@ -175,10 +229,9 @@ const editLessonData = ref<{ id: number; title: string; video_url: string; conte
 
 const openEditLesson = (lesson: any) => {
   editLessonData.value = {
-    id:        lesson.id,
-    title:     lesson.title,
+    id: lesson.id, title: lesson.title,
     video_url: lesson.video_url || '',
-    content:   lesson.content  || '',
+    content: lesson.content || '',
     duration_minutes: lesson.duration_minutes || null,
   }
   isEditLessonVisible.value = true
@@ -190,13 +243,13 @@ const submitEditLesson = async () => {
     let duration_seconds = editLessonData.value.duration_minutes
       ? editLessonData.value.duration_minutes * 60
       : null
-    if (duration_seconds === null && editLessonData.value.video_url) {
+    if (duration_seconds === null && editLessonData.value.video_url)
       duration_seconds = await probeVideoDuration(editLessonData.value.video_url)
-    }
+
     await api.put(`/api/dashboard/lessons/${editLessonData.value.id}`, {
-      title:     editLessonData.value.title,
+      title: editLessonData.value.title,
       video_url: editLessonData.value.video_url,
-      content:   editLessonData.value.content,
+      content: editLessonData.value.content,
       duration_seconds,
     })
     isEditLessonVisible.value = false
@@ -233,10 +286,6 @@ const uploadTitle           = ref('')
 const attachmentToDelete    = ref<any>(null)
 const isDeleteAttachVisible = ref(false)
 const isDeletingAttachment  = ref(false)
-
-const API_STORAGE = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
-  : 'http://localhost:8000'
 
 const loadAttachments = async (moduleId: number) => {
   try {
@@ -297,29 +346,35 @@ const formatSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
-
-// load attachments when a module panel opens
-const onPanelOpen = (moduleId: number) => {
-  if (!attachmentsMap.value[moduleId]) loadAttachments(moduleId)
-}
 </script>
 
 <template>
   <VCard class="pa-5">
     <!-- Header -->
-    <div class="d-flex justify-space-between align-center mb-6">
+    <div class="d-flex justify-space-between align-center mb-6 flex-wrap gap-3">
       <div>
         <h4 class="text-h5 font-weight-bold">{{ $t('Curriculum Builder') }}</h4>
-        <p class="text-medium-emphasis text-body-2 mt-1">{{ $t('Manage course modules and lessons') }}</p>
+        <p class="text-medium-emphasis text-body-2 mt-1">
+          {{ $t('Drag the') }}
+          <VIcon icon="tabler-grip-vertical" size="14" class="mx-1" />
+          {{ $t('handle to reorder modules and lessons') }}
+        </p>
       </div>
-      <VBtn prepend-icon="tabler-plus" color="primary" @click="isAddModuleVisible = true">
-        {{ $t('Add Module') }}
-      </VBtn>
+      <div class="d-flex align-center gap-2">
+        <VFadeTransition>
+          <VChip v-if="isSavingOrder" size="small" color="warning" prepend-icon="tabler-loader-2">
+            {{ $t('Saving order…') }}
+          </VChip>
+        </VFadeTransition>
+        <VBtn prepend-icon="tabler-plus" color="primary" @click="isAddModuleVisible = true">
+          {{ $t('Add Module') }}
+        </VBtn>
+      </div>
     </div>
 
     <!-- Loading -->
-    <div v-if="isLoading" class="d-flex justify-center pa-8">
-      <VProgressCircular indeterminate color="primary" />
+    <div v-if="isLoading" class="d-flex justify-center pa-10">
+      <VProgressCircular indeterminate color="primary" size="48" />
     </div>
 
     <!-- Empty State -->
@@ -327,155 +382,198 @@ const onPanelOpen = (moduleId: number) => {
       {{ $t('No modules yet. Click "Add Module" to get started.') }}
     </VAlert>
 
-    <!-- Modules Accordion -->
-    <VExpansionPanels v-else class="mt-2" variant="accordion" @update:model-value="v => { if (v !== undefined) onPanelOpen(modules[v]?.id) }">
-      <VExpansionPanel v-for="(mod, mIdx) in modules" :key="mod.id">
-        <VExpansionPanelTitle>
-          <div class="d-flex align-center gap-3 w-100">
-            <VChip size="x-small" color="primary" variant="tonal" label>{{ mIdx + 1 }}</VChip>
-            <span class="font-weight-semibold text-h6">{{ mod.title }}</span>
-            <VChip size="x-small" variant="tonal" color="secondary" class="ms-auto me-4">
-              {{ mod.lessons?.length || 0 }} {{ $t('lessons') }}
-            </VChip>
-          </div>
-        </VExpansionPanelTitle>
-
-        <VExpansionPanelText>
-          <!-- Module Actions Bar -->
-          <div class="d-flex gap-2 mb-4">
-            <VBtn
-              size="small"
-              variant="tonal"
-              color="info"
-              prepend-icon="tabler-edit"
-              @click.stop="openEditModule(mod)"
-            >
-              {{ $t('Rename Module') }}
-            </VBtn>
-            <VBtn
-              size="small"
-              variant="tonal"
-              color="error"
-              prepend-icon="tabler-trash"
-              @click.stop="confirmDeleteModule(mod)"
-            >
-              {{ $t('Delete Module') }}
-            </VBtn>
+    <!-- ── Draggable Modules List ──────────────────────────────────────────── -->
+    <div v-else ref="modulesParent" class="d-flex flex-column gap-3">
+      <div
+        v-for="(mod, mIdx) in modules"
+        :key="mod.id"
+        class="rounded-lg border module-card"
+        style="border-color: rgba(var(--v-border-color), var(--v-border-opacity))"
+      >
+        <!-- Module Header -->
+        <div
+          class="d-flex align-center gap-3 pa-4 rounded-t-lg cursor-pointer"
+          style="background: rgba(var(--v-theme-surface-variant), 0.4)"
+          @click="toggleCollapse(mod.id)"
+        >
+          <!-- Drag Handle -->
+          <div
+            class="module-drag-handle d-flex align-center justify-center rounded"
+            style="cursor: grab; width:28px; height:28px; background: rgba(var(--v-theme-primary), 0.08)"
+            @click.stop
+          >
+            <VIcon icon="tabler-grip-vertical" size="18" color="primary" />
           </div>
 
-          <VDivider class="mb-4" />
+          <!-- Order badge -->
+          <VChip size="x-small" color="primary" variant="tonal" label>{{ mIdx + 1 }}</VChip>
 
-          <!-- Items List (Lessons & Quizzes) -->
-          <VList v-if="mod.items && mod.items.length > 0" class="mb-3" lines="two">
-            <VListItem
-              v-for="(item, lIdx) in mod.items"
-              :key="`${item.item_type}-${item.id}`"
-              :subtitle="item.item_type === 'lesson' ? item.video_url : `${item.questions?.length || 0} Questions • Pass: ${item.passing_score}%`"
-              rounded="lg"
-              class="mb-1"
-              border
+          <!-- Title -->
+          <span class="font-weight-semibold text-body-1 flex-grow-1">{{ mod.title }}</span>
+
+          <!-- Meta chips -->
+          <VChip size="x-small" variant="tonal" color="secondary" class="me-1">
+            {{ mod.lessons?.length || 0 }} {{ $t('lessons') }}
+          </VChip>
+
+          <!-- Module actions -->
+          <VBtn
+            icon="tabler-edit"
+            size="x-small"
+            variant="text"
+            color="info"
+            @click.stop="openEditModule(mod)"
+          />
+          <VBtn
+            icon="tabler-trash"
+            size="x-small"
+            variant="text"
+            color="error"
+            @click.stop="confirmDeleteModule(mod)"
+          />
+
+          <!-- Collapse toggle -->
+          <VIcon
+            :icon="collapsedMap[mod.id] ? 'tabler-chevron-down' : 'tabler-chevron-up'"
+            size="18"
+            class="ms-1"
+          />
+        </div>
+
+        <!-- Module Body (collapsible) -->
+        <VExpandTransition>
+          <div v-if="!collapsedMap[mod.id]" class="pa-4">
+
+            <VDivider class="mb-4" />
+
+            <!-- ── Draggable Lessons List ───────────────────────────── -->
+            <div
+              v-if="mod.items && mod.items.length > 0"
+              :ref="el => initLessonDrag(el as HTMLElement, mod)"
+              class="d-flex flex-column gap-2 mb-4"
             >
-              <template #prepend>
-                <VAvatar :color="item.item_type === 'quiz' ? 'secondary' : 'primary'" variant="tonal" size="36" rounded>
-                  <VIcon :icon="item.item_type === 'quiz' ? 'tabler-clipboard-check' : 'tabler-play-circle'" size="20" />
+              <div
+                v-for="(item, lIdx) in mod.items"
+                :key="`${item.item_type}-${item.id}`"
+                class="d-flex align-center gap-3 rounded-lg pa-3 lesson-item border"
+                style="border-color: rgba(var(--v-border-color), var(--v-border-opacity))"
+              >
+                <!-- Lesson Drag Handle -->
+                <div
+                  class="lesson-drag-handle d-flex align-center justify-center rounded"
+                  style="cursor: grab; width:24px; height:24px; flex-shrink:0; background: rgba(var(--v-theme-secondary), 0.08)"
+                  @click.stop
+                >
+                  <VIcon icon="tabler-grip-vertical" size="14" color="secondary" />
+                </div>
+
+                <!-- Icon -->
+                <VAvatar :color="item.item_type === 'quiz' ? 'secondary' : 'primary'" variant="tonal" size="32" rounded>
+                  <VIcon :icon="item.item_type === 'quiz' ? 'tabler-clipboard-check' : 'tabler-play-circle'" size="16" />
                 </VAvatar>
-              </template>
 
-              <template #title>
-                <span class="font-weight-medium">{{ item.title }}</span>
-                <VChip v-if="item.item_type === 'quiz'" size="x-small" color="secondary" class="ml-2">Quiz</VChip>
-              </template>
+                <!-- Content -->
+                <div class="flex-grow-1 overflow-hidden">
+                  <div class="d-flex align-center gap-2">
+                    <span class="font-weight-medium text-body-2 text-truncate">{{ item.title }}</span>
+                    <VChip v-if="item.item_type === 'quiz'" size="x-small" color="secondary">Quiz</VChip>
+                  </div>
+                  <div class="text-caption text-medium-emphasis text-truncate">
+                    {{ item.item_type === 'lesson' ? item.video_url : `Passing Score: ${item.passing_score}%` }}
+                  </div>
+                </div>
 
-              <template #subtitle>
-                <span class="text-caption text-medium-emphasis">
-                  {{ item.item_type === 'lesson' ? item.video_url : `Passing Score: ${item.passing_score}%` }}
-                </span>
-              </template>
-
-              <template #append>
-                <VBtn v-if="item.item_type === 'lesson'" icon="tabler-edit" variant="text" size="small" color="info" @click="openEditLesson(item)" />
-                <VBtn v-if="item.item_type === 'lesson'" icon="tabler-trash" variant="text" size="small" color="error" @click="confirmDeleteLesson(item)" />
-                <!-- Add quiz edit/delete actions here later -->
-              </template>
-            </VListItem>
-          </VList>
-
-          <p v-else class="text-medium-emphasis text-body-2 mb-3">{{ $t('No items in this module yet.') }}</p>
-
-          <!-- Add Buttons -->
-          <div class="d-flex gap-2">
-            <VBtn size="small" variant="outlined" color="primary" prepend-icon="tabler-plus" @click="openAddLesson(mod.id)">
-              {{ $t('Add Lesson') }}
-            </VBtn>
-            <VBtn size="small" variant="outlined" color="secondary" prepend-icon="tabler-plus" to="/quizzes/exams">
-              {{ $t('Manage Quizzes') }}
-            </VBtn>
-          </div>
-
-          <VDivider class="my-4" />
-
-          <!-- ── PDF Attachments Section ───────────────────────────────── -->
-          <div class="d-flex justify-space-between align-center mb-3">
-            <div class="d-flex align-center gap-2">
-              <VIcon icon="tabler-paperclip" size="18" color="warning" />
-              <span class="text-body-1 font-weight-semibold">{{ $t('PDF Attachments') }}</span>
-              <VChip size="x-small" variant="tonal" color="warning">
-                {{ (attachmentsMap[mod.id] || []).length }}
-              </VChip>
+                <!-- Actions -->
+                <VBtn
+                  v-if="item.item_type === 'lesson'"
+                  icon="tabler-edit"
+                  variant="text"
+                  size="x-small"
+                  color="info"
+                  @click.stop="openEditLesson(item)"
+                />
+                <VBtn
+                  v-if="item.item_type === 'lesson'"
+                  icon="tabler-trash"
+                  variant="text"
+                  size="x-small"
+                  color="error"
+                  @click.stop="confirmDeleteLesson(item)"
+                />
+              </div>
             </div>
-            <VBtn size="small" variant="tonal" color="warning" prepend-icon="tabler-upload" @click="openUploadDialog(mod.id)">
-              {{ $t('Upload PDF') }}
-            </VBtn>
-          </div>
 
-          <!-- Attachments list -->
-          <div v-if="attachmentsMap[mod.id] && attachmentsMap[mod.id].length > 0">
-            <VList lines="one" density="compact">
-              <VListItem
+            <p v-else class="text-medium-emphasis text-body-2 mb-4">
+              {{ $t('No items in this module yet.') }}
+            </p>
+
+            <!-- Add Buttons -->
+            <div class="d-flex gap-2 mb-4">
+              <VBtn size="small" variant="outlined" color="primary" prepend-icon="tabler-plus" @click="openAddLesson(mod.id)">
+                {{ $t('Add Lesson') }}
+              </VBtn>
+              <VBtn size="small" variant="outlined" color="secondary" prepend-icon="tabler-plus" to="/quizzes/exams">
+                {{ $t('Manage Quizzes') }}
+              </VBtn>
+            </div>
+
+            <VDivider class="my-4" />
+
+            <!-- ── PDF Attachments ─────────────────────────────────── -->
+            <div class="d-flex justify-space-between align-center mb-3">
+              <div class="d-flex align-center gap-2">
+                <VIcon icon="tabler-paperclip" size="18" color="warning" />
+                <span class="text-body-2 font-weight-semibold">{{ $t('PDF Attachments') }}</span>
+                <VChip size="x-small" variant="tonal" color="warning">
+                  {{ (attachmentsMap[mod.id] || []).length }}
+                </VChip>
+              </div>
+              <VBtn size="small" variant="tonal" color="warning" prepend-icon="tabler-upload" @click="openUploadDialog(mod.id)">
+                {{ $t('Upload PDF') }}
+              </VBtn>
+            </div>
+
+            <div v-if="attachmentsMap[mod.id] && attachmentsMap[mod.id].length > 0">
+              <div
                 v-for="att in attachmentsMap[mod.id]"
                 :key="att.id"
-                rounded="lg"
-                class="mb-1 px-3"
-                border
+                class="d-flex align-center gap-3 rounded-lg pa-3 mb-2 border"
+                style="border-color: rgba(var(--v-border-color), var(--v-border-opacity))"
               >
-                <template #prepend>
-                  <VAvatar color="error" variant="tonal" size="32" rounded>
-                    <VIcon icon="tabler-file-type-pdf" size="18" />
-                  </VAvatar>
-                </template>
-                <template #title>
-                  <span class="text-body-2 font-weight-medium">{{ att.title }}</span>
-                </template>
-                <template #subtitle>
-                  <span class="text-caption text-medium-emphasis">{{ formatSize(att.file_size) }}</span>
-                </template>
-                <template #append>
-                  <VBtn
-                    icon="tabler-download"
-                    variant="text"
-                    size="small"
-                    color="primary"
-                    :href="`${API_STORAGE}/storage/${att.file_path}`"
-                    target="_blank"
-                  />
-                  <VBtn
-                    icon="tabler-trash"
-                    variant="text"
-                    size="small"
-                    color="error"
-                    @click="confirmDeleteAttachment({ ...att, module_id: mod.id })"
-                  />
-                </template>
-              </VListItem>
-            </VList>
+                <VAvatar color="error" variant="tonal" size="30" rounded>
+                  <VIcon icon="tabler-file-type-pdf" size="16" />
+                </VAvatar>
+                <div class="flex-grow-1">
+                  <div class="text-body-2 font-weight-medium">{{ att.title }}</div>
+                  <div class="text-caption text-medium-emphasis">{{ formatSize(att.file_size) }}</div>
+                </div>
+                <VBtn
+                  icon="tabler-download"
+                  variant="text"
+                  size="x-small"
+                  color="primary"
+                  :href="`${API_STORAGE}/storage/${att.file_path}`"
+                  target="_blank"
+                />
+                <VBtn
+                  icon="tabler-trash"
+                  variant="text"
+                  size="x-small"
+                  color="error"
+                  @click="confirmDeleteAttachment({ ...att, module_id: mod.id })"
+                />
+              </div>
+            </div>
+            <p v-else class="text-caption text-medium-emphasis">{{ $t('No attachments yet.') }}</p>
+
           </div>
-          <p v-else class="text-caption text-medium-emphasis mb-1">{{ $t('No attachments yet.') }}</p>
+        </VExpandTransition>
+      </div>
+    </div>
 
-        </VExpansionPanelText>
-      </VExpansionPanel>
-    </VExpansionPanels>
+    <!-- ─── Dialogs ──────────────────────────────────────────────────────────── -->
 
-    <!-- ─── Add Module Dialog ─────────────────────────────────────────────────── -->
+    <!-- Add Module -->
     <VDialog v-model="isAddModuleVisible" max-width="480">
       <VCard>
         <VCardItem>
@@ -485,25 +583,17 @@ const onPanelOpen = (moduleId: number) => {
           </VCardTitle>
         </VCardItem>
         <VCardText>
-          <VTextField
-            v-model="addModuleTitle"
-            :label="$t('Module Title')"
-            variant="outlined"
-            autofocus
-            @keyup.enter="submitAddModule"
-          />
+          <VTextField v-model="addModuleTitle" :label="$t('Module Title')" variant="outlined" autofocus @keyup.enter="submitAddModule" />
         </VCardText>
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isAddModuleVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn color="primary" :loading="isAddingModule" :disabled="!addModuleTitle.trim()" @click="submitAddModule">
-            {{ $t('Save') }}
-          </VBtn>
+          <VBtn color="primary" :loading="isAddingModule" :disabled="!addModuleTitle.trim()" @click="submitAddModule">{{ $t('Save') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Edit Module Dialog ────────────────────────────────────────────────── -->
+    <!-- Edit Module -->
     <VDialog v-model="isEditModuleVisible" max-width="480">
       <VCard>
         <VCardItem>
@@ -513,25 +603,17 @@ const onPanelOpen = (moduleId: number) => {
           </VCardTitle>
         </VCardItem>
         <VCardText>
-          <VTextField
-            v-model="editModuleData.title"
-            :label="$t('Module Title')"
-            variant="outlined"
-            autofocus
-            @keyup.enter="submitEditModule"
-          />
+          <VTextField v-model="editModuleData.title" :label="$t('Module Title')" variant="outlined" autofocus @keyup.enter="submitEditModule" />
         </VCardText>
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isEditModuleVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn color="info" :loading="isEditingModule" :disabled="!editModuleData.title.trim()" @click="submitEditModule">
-            {{ $t('Save Changes') }}
-          </VBtn>
+          <VBtn color="info" :loading="isEditingModule" :disabled="!editModuleData.title.trim()" @click="submitEditModule">{{ $t('Save Changes') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Delete Module Confirm ─────────────────────────────────────────────── -->
+    <!-- Delete Module -->
     <VDialog v-model="isDeleteModuleVisible" max-width="420">
       <VCard>
         <VCardItem>
@@ -549,14 +631,12 @@ const onPanelOpen = (moduleId: number) => {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isDeleteModuleVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn color="error" :loading="isDeletingModule" @click="executeDeleteModule">
-            {{ $t('Yes, Delete') }}
-          </VBtn>
+          <VBtn color="error" :loading="isDeletingModule" @click="executeDeleteModule">{{ $t('Yes, Delete') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Add Lesson Dialog ─────────────────────────────────────────────────── -->
+    <!-- Add Lesson -->
     <VDialog v-model="isAddLessonVisible" max-width="560">
       <VCard>
         <VCardItem>
@@ -574,7 +654,7 @@ const onPanelOpen = (moduleId: number) => {
               <VTextField
                 v-model="addLessonForm.video_url"
                 :label="$t('Video URL')"
-                placeholder="https://youtube.com/..."
+                placeholder="https://..."
                 type="url"
                 variant="outlined"
                 prepend-inner-icon="tabler-brand-youtube"
@@ -585,13 +665,9 @@ const onPanelOpen = (moduleId: number) => {
               <VTextField
                 v-model.number="addLessonForm.duration_minutes"
                 :label="$t('Duration (minutes)')"
-                type="number"
-                min="0"
-                variant="outlined"
+                type="number" min="0" variant="outlined"
                 prepend-inner-icon="tabler-clock"
                 :loading="isProbing"
-                placeholder="e.g. 15"
-                persistent-hint
                 :messages="isProbing ? [$t('Probing video URL for duration...')] : []"
               />
             </VCol>
@@ -603,19 +679,12 @@ const onPanelOpen = (moduleId: number) => {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isAddLessonVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn
-            color="primary"
-            :loading="isAddingLesson"
-            :disabled="!addLessonForm.title || !addLessonForm.video_url"
-            @click="submitAddLesson"
-          >
-            {{ $t('Save') }}
-          </VBtn>
+          <VBtn color="primary" :loading="isAddingLesson" :disabled="!addLessonForm.title || !addLessonForm.video_url" @click="submitAddLesson">{{ $t('Save') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Edit Lesson Dialog ────────────────────────────────────────────────── -->
+    <!-- Edit Lesson -->
     <VDialog v-model="isEditLessonVisible" max-width="560">
       <VCard>
         <VCardItem>
@@ -633,8 +702,7 @@ const onPanelOpen = (moduleId: number) => {
               <VTextField
                 v-model="editLessonData.video_url"
                 :label="$t('Video URL')"
-                type="url"
-                variant="outlined"
+                type="url" variant="outlined"
                 prepend-inner-icon="tabler-brand-youtube"
                 @blur="onVideoUrlChange('edit')"
               />
@@ -643,13 +711,9 @@ const onPanelOpen = (moduleId: number) => {
               <VTextField
                 v-model.number="editLessonData.duration_minutes"
                 :label="$t('Duration (minutes)')"
-                type="number"
-                min="0"
-                variant="outlined"
+                type="number" min="0" variant="outlined"
                 prepend-inner-icon="tabler-clock"
                 :loading="isProbing"
-                placeholder="e.g. 15"
-                persistent-hint
                 :messages="isProbing ? [$t('Probing video URL for duration...')] : []"
               />
             </VCol>
@@ -661,19 +725,12 @@ const onPanelOpen = (moduleId: number) => {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isEditLessonVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn
-            color="info"
-            :loading="isEditingLesson"
-            :disabled="!editLessonData.title || !editLessonData.video_url"
-            @click="submitEditLesson"
-          >
-            {{ $t('Save Changes') }}
-          </VBtn>
+          <VBtn color="info" :loading="isEditingLesson" :disabled="!editLessonData.title || !editLessonData.video_url" @click="submitEditLesson">{{ $t('Save Changes') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Delete Lesson Confirm ─────────────────────────────────────────────── -->
+    <!-- Delete Lesson -->
     <VDialog v-model="isDeleteLessonVisible" max-width="400">
       <VCard>
         <VCardItem>
@@ -688,14 +745,12 @@ const onPanelOpen = (moduleId: number) => {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isDeleteLessonVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn color="error" :loading="isDeletingLesson" @click="executeDeleteLesson">
-            {{ $t('Yes, Delete') }}
-          </VBtn>
+          <VBtn color="error" :loading="isDeletingLesson" @click="executeDeleteLesson">{{ $t('Yes, Delete') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Upload PDF Dialog ────────────────────────────────────────────────── -->
+    <!-- Upload PDF -->
     <VDialog v-model="isUploadVisible" max-width="500">
       <VCard>
         <VCardItem>
@@ -707,34 +762,21 @@ const onPanelOpen = (moduleId: number) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <VTextField
-                v-model="uploadTitle"
-                :label="$t('Title (optional)')"
-                variant="outlined"
-                :placeholder="$t('Leave blank to use filename')"
-              />
+              <VTextField v-model="uploadTitle" :label="$t('Title (optional)')" variant="outlined" :placeholder="$t('Leave blank to use filename')" />
             </VCol>
             <VCol cols="12">
               <div
                 class="rounded-lg border-2 border-dashed pa-6 text-center cursor-pointer"
-                style="border-color: rgba(var(--v-theme-warning), 0.5); background: rgba(var(--v-theme-warning), 0.04);"
+                style="border-color: rgba(var(--v-theme-warning), 0.5); background: rgba(var(--v-theme-warning), 0.04)"
                 @click="($refs.pdfInput as HTMLInputElement).click()"
               >
                 <VIcon icon="tabler-upload" size="36" color="warning" class="mb-2" />
                 <p class="text-body-2 font-weight-semibold text-warning">
                   {{ uploadFile ? uploadFile.name : $t('Click to choose PDF file') }}
                 </p>
-                <p v-if="uploadFile" class="text-caption text-medium-emphasis">
-                  {{ formatSize(uploadFile.size) }}
-                </p>
+                <p v-if="uploadFile" class="text-caption text-medium-emphasis">{{ formatSize(uploadFile.size) }}</p>
                 <p v-else class="text-caption text-medium-emphasis">PDF • {{ $t('Max 20MB') }}</p>
-                <input
-                  ref="pdfInput"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  class="d-none"
-                  @change="onFileChange"
-                />
+                <input ref="pdfInput" type="file" accept=".pdf,application/pdf" class="d-none" @change="onFileChange" />
               </div>
             </VCol>
           </VRow>
@@ -742,20 +784,12 @@ const onPanelOpen = (moduleId: number) => {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isUploadVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn
-            color="warning"
-            :loading="isUploading"
-            :disabled="!uploadFile"
-            prepend-icon="tabler-upload"
-            @click="submitUpload"
-          >
-            {{ $t('Upload') }}
-          </VBtn>
+          <VBtn color="warning" :loading="isUploading" :disabled="!uploadFile" prepend-icon="tabler-upload" @click="submitUpload">{{ $t('Upload') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <!-- ─── Delete Attachment Confirm ────────────────────────────────────────── -->
+    <!-- Delete Attachment -->
     <VDialog v-model="isDeleteAttachVisible" max-width="400">
       <VCard>
         <VCardItem>
@@ -770,11 +804,30 @@ const onPanelOpen = (moduleId: number) => {
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="isDeleteAttachVisible = false">{{ $t('Cancel') }}</VBtn>
-          <VBtn color="error" :loading="isDeletingAttachment" @click="executeDeleteAttachment">
-            {{ $t('Yes, Delete') }}
-          </VBtn>
+          <VBtn color="error" :loading="isDeletingAttachment" @click="executeDeleteAttachment">{{ $t('Yes, Delete') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
+
   </VCard>
 </template>
+
+<style scoped>
+.module-card {
+  transition: box-shadow 0.2s;
+}
+.module-card:hover {
+  box-shadow: 0 2px 12px rgba(var(--v-theme-primary), 0.08);
+}
+.module-drag-handle:active,
+.lesson-drag-handle:active {
+  cursor: grabbing !important;
+}
+/* formkit drag placeholder style */
+:global([data-is-drag-placeholder]) {
+  opacity: 0.4;
+  background: rgba(var(--v-theme-primary), 0.06) !important;
+  border: 2px dashed rgba(var(--v-theme-primary), 0.3) !important;
+  border-radius: 8px;
+}
+</style>

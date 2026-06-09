@@ -1,22 +1,59 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import api from '@/plugins/axios'
 
 definePage({ meta: { requiresAdmin: true } })
 
+const API_STORAGE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+
 // ─── Table State ────────────────────────────────────────────────────────────
 const students  = ref<any[]>([])
 const isLoading = ref(true)
+const search    = ref('')
 
-// ─── View Profile Dialog ────────────────────────────────────────────────────
-const selectedStudent      = ref<any>(null)
-const isProfileDialogVisible = ref(false)
-const viewStudent = (s: any) => { selectedStudent.value = s; isProfileDialogVisible.value = true }
+const filteredStudents = computed(() => {
+  if (!search.value) return students.value
+  const q = search.value.toLowerCase()
+  return students.value.filter(s =>
+    s.name?.toLowerCase().includes(q) ||
+    s.email?.toLowerCase().includes(q)
+  )
+})
+
+// ─── Student Detail Dialog ──────────────────────────────────────────────────
+const selectedStudent        = ref<any>(null)
+const studentDetail          = ref<{ enrollments: any[]; bundles: any[] } | null>(null)
+const isDetailDialogVisible  = ref(false)
+const isLoadingDetail        = ref(false)
+const detailTab              = ref<'progress' | 'bundles'>('progress')
+
+const openDetailDialog = async (s: any) => {
+  selectedStudent.value       = s
+  studentDetail.value         = null
+  isLoadingDetail.value       = true
+  detailTab.value             = 'progress'
+  isDetailDialogVisible.value = true
+
+  try {
+    const res = await api.get(`/api/dashboard/students/${s.id}/detail`)
+    studentDetail.value = res.data
+  } catch (e) {
+    console.error('Failed to load student detail', e)
+  } finally {
+    isLoadingDetail.value = false
+  }
+}
+
+const totalProgress = computed(() => {
+  const arr = studentDetail.value?.enrollments || []
+  if (!arr.length) return 0
+  return Math.round(arr.reduce((sum: number, e: any) => sum + (e.progress || 0), 0) / arr.length)
+})
 
 // ─── Add Student Dialog State ───────────────────────────────────────────────
 const isAddDialogVisible = ref(false)
 const isAdding           = ref(false)
-const addErrors          = ref<Record<string, string>>({})  // 422 field errors
+const addErrors          = ref<Record<string, string>>({})
 const isPasswordVisible  = ref(false)
 const addForm = ref({ name: '', email: '', password: '' })
 
@@ -32,11 +69,10 @@ const submitAddStudent = async () => {
   isAdding.value  = true
   try {
     const res = await api.post('/api/dashboard/students', addForm.value)
-    students.value.unshift(res.data.student)   // Prepend to list without refetch
+    students.value.unshift(res.data.student)
     isAddDialogVisible.value = false
   } catch (e: any) {
     if (e.response?.status === 422) {
-      // Hydrate each field with its first error message from Laravel
       const raw = e.response.data.errors || {}
       Object.keys(raw).forEach(k => { addErrors.value[k] = raw[k][0] })
     } else {
@@ -58,6 +94,9 @@ onMounted(async () => {
     isLoading.value = false
   }
 })
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const progressColor = (p: number) => p >= 80 ? 'success' : p >= 40 ? 'warning' : 'error'
 </script>
 
 <template>
@@ -71,9 +110,21 @@ onMounted(async () => {
       <VCardSubtitle>{{ $t('Manage all registered students') }}</VCardSubtitle>
 
       <template #append>
-        <VBtn color="primary" prepend-icon="tabler-user-plus" @click="openAddDialog">
-          {{ $t('Add Student') }}
-        </VBtn>
+        <div class="d-flex align-center gap-3">
+          <VTextField
+            v-model="search"
+            prepend-inner-icon="tabler-search"
+            :placeholder="$t('Search...')"
+            density="compact"
+            variant="outlined"
+            hide-details
+            style="max-width: 220px"
+            clearable
+          />
+          <VBtn color="primary" prepend-icon="tabler-user-plus" @click="openAddDialog">
+            {{ $t('Add Student') }}
+          </VBtn>
+        </div>
       </template>
     </VCardItem>
 
@@ -94,12 +145,12 @@ onMounted(async () => {
               <VProgressCircular indeterminate color="primary" />
             </td>
           </tr>
-          <tr v-else-if="students.length === 0">
+          <tr v-else-if="filteredStudents.length === 0">
             <td colspan="5" class="text-center text-medium-emphasis pa-8">
               {{ $t('No students registered yet.') }}
             </td>
           </tr>
-          <tr v-for="student in students" :key="student.id">
+          <tr v-for="student in filteredStudents" :key="student.id">
             <td>
               <div class="d-flex align-center gap-2">
                 <VAvatar color="primary" variant="tonal" size="34">
@@ -116,7 +167,14 @@ onMounted(async () => {
               {{ new Date(student.created_at).toLocaleDateString() }}
             </td>
             <td>
-              <VBtn icon="tabler-eye" variant="text" size="small" @click="viewStudent(student)" />
+              <VBtn
+                icon="tabler-chart-bar"
+                variant="text"
+                size="small"
+                color="primary"
+                :title="$t('View Progress & Bundles')"
+                @click="openDetailDialog(student)"
+              />
             </td>
           </tr>
         </tbody>
@@ -124,38 +182,156 @@ onMounted(async () => {
     </VCardText>
   </VCard>
 
-  <!-- ─── Profile View Dialog ──────────────────────────────────────────────── -->
-  <VDialog v-model="isProfileDialogVisible" max-width="480">
+  <!-- ─── Student Detail Dialog ────────────────────────────────────────────── -->
+  <VDialog v-model="isDetailDialogVisible" max-width="680" scrollable>
     <VCard v-if="selectedStudent">
-      <VCardItem>
-        <VCardTitle class="d-flex align-center gap-2">
-          <VIcon icon="tabler-user-circle" />
-          {{ $t('Student Profile') }}
-        </VCardTitle>
+      <!-- Header -->
+      <VCardItem class="pb-0">
+        <template #prepend>
+          <VAvatar color="primary" variant="tonal" size="46">
+            <VIcon icon="tabler-user" size="24" />
+          </VAvatar>
+        </template>
+        <VCardTitle>{{ selectedStudent.name }}</VCardTitle>
+        <VCardSubtitle>{{ selectedStudent.email }}</VCardSubtitle>
+        <template #append>
+          <VBtn icon="tabler-x" variant="text" size="small" @click="isDetailDialogVisible = false" />
+        </template>
       </VCardItem>
-      <VCardText>
-        <VList>
-          <VListItem prepend-icon="tabler-hash">
-            <VListItemTitle>{{ $t('ID') }}</VListItemTitle>
-            <VListItemSubtitle>{{ selectedStudent.id }}</VListItemSubtitle>
-          </VListItem>
-          <VListItem prepend-icon="tabler-user">
-            <VListItemTitle>{{ $t('Name') }}</VListItemTitle>
-            <VListItemSubtitle>{{ selectedStudent.name }}</VListItemSubtitle>
-          </VListItem>
-          <VListItem prepend-icon="tabler-mail">
-            <VListItemTitle>{{ $t('Email') }}</VListItemTitle>
-            <VListItemSubtitle>{{ selectedStudent.email }}</VListItemSubtitle>
-          </VListItem>
-          <VListItem prepend-icon="tabler-calendar">
-            <VListItemTitle>{{ $t('Registered') }}</VListItemTitle>
-            <VListItemSubtitle>{{ new Date(selectedStudent.created_at).toLocaleString() }}</VListItemSubtitle>
-          </VListItem>
-        </VList>
-      </VCardText>
+
+      <!-- Loading -->
+      <div v-if="isLoadingDetail" class="d-flex justify-center pa-10">
+        <VProgressCircular indeterminate color="primary" />
+      </div>
+
+      <template v-else-if="studentDetail">
+        <!-- Summary chips -->
+        <VCardText class="pb-0 pt-4">
+          <div class="d-flex flex-wrap gap-3">
+            <VChip color="primary" variant="tonal" prepend-icon="tabler-book-2">
+              {{ studentDetail.enrollments.length }} {{ $t('Courses') }}
+            </VChip>
+            <VChip color="success" variant="tonal" prepend-icon="tabler-trending-up">
+              {{ $t('Avg. Progress') }}: {{ totalProgress }}%
+            </VChip>
+            <VChip color="warning" variant="tonal" prepend-icon="tabler-packages">
+              {{ studentDetail.bundles.length }} {{ $t('Bundles') }}
+            </VChip>
+          </div>
+        </VCardText>
+
+        <!-- Tabs -->
+        <VTabs v-model="detailTab" class="mt-3 px-4" density="compact">
+          <VTab value="progress" prepend-icon="tabler-chart-bar">
+            {{ $t('Course Progress') }}
+          </VTab>
+          <VTab value="bundles" prepend-icon="tabler-packages">
+            {{ $t('Subscribed Bundles') }}
+            <VChip v-if="studentDetail.bundles.length" size="x-small" color="warning" class="ms-2">
+              {{ studentDetail.bundles.length }}
+            </VChip>
+          </VTab>
+        </VTabs>
+
+        <VDivider />
+
+        <VCardText style="max-height: 420px; overflow-y: auto">
+
+          <!-- ── Progress Tab ─────────────────────────────────────── -->
+          <VTabsWindow v-model="detailTab">
+            <VTabsWindowItem value="progress">
+              <div v-if="studentDetail.enrollments.length === 0" class="text-center py-8 text-medium-emphasis">
+                <VIcon icon="tabler-book-off" size="48" class="mb-3 opacity-30" />
+                <p>{{ $t('No course enrollments yet.') }}</p>
+              </div>
+
+              <div v-else class="d-flex flex-column gap-3 pt-2">
+                <div
+                  v-for="en in studentDetail.enrollments"
+                  :key="en.id"
+                  class="d-flex align-center gap-3 rounded-lg pa-3 border"
+                  style="border-color: rgba(var(--v-border-color), var(--v-border-opacity))"
+                >
+                  <!-- Thumbnail -->
+                  <VAvatar
+                    v-if="en.thumbnail"
+                    :image="`${API_STORAGE}/storage/${en.thumbnail}`"
+                    rounded size="42"
+                  />
+                  <VAvatar v-else color="primary" variant="tonal" rounded size="42">
+                    <VIcon icon="tabler-book-2" size="20" />
+                  </VAvatar>
+
+                  <!-- Info -->
+                  <div class="flex-grow-1 overflow-hidden">
+                    <div class="text-body-2 font-weight-semibold text-truncate">{{ en.course_title }}</div>
+                    <div class="d-flex align-center gap-2 mt-1">
+                      <VProgressLinear
+                        :model-value="en.progress"
+                        :color="progressColor(en.progress)"
+                        rounded height="6"
+                        style="flex:1"
+                      />
+                      <span class="text-caption font-weight-bold" :class="`text-${progressColor(en.progress)}`">
+                        {{ en.progress }}%
+                      </span>
+                    </div>
+                    <div class="text-caption text-medium-emphasis mt-1">
+                      {{ $t('Enrolled') }}: {{ new Date(en.enrolled_at).toLocaleDateString() }}
+                      <template v-if="en.bundle_id">
+                        · <VChip size="x-small" color="warning" variant="tonal">Bundle</VChip>
+                      </template>
+                      <template v-if="en.expires_at">
+                        · {{ $t('Expires') }}: {{ new Date(en.expires_at).toLocaleDateString() }}
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </VTabsWindowItem>
+
+            <!-- ── Bundles Tab ──────────────────────────────────── -->
+            <VTabsWindowItem value="bundles">
+              <div v-if="studentDetail.bundles.length === 0" class="text-center py-8 text-medium-emphasis">
+                <VIcon icon="tabler-packages" size="48" class="mb-3 opacity-30" />
+                <p>{{ $t('No bundle subscriptions.') }}</p>
+              </div>
+
+              <div v-else class="d-flex flex-column gap-3 pt-2">
+                <div
+                  v-for="b in studentDetail.bundles"
+                  :key="b.id"
+                  class="d-flex align-center gap-3 rounded-lg pa-4 border"
+                  style="border-color: rgba(var(--v-theme-warning), 0.3); background: rgba(var(--v-theme-warning), 0.04)"
+                >
+                  <div class="d-flex align-center justify-center rounded-lg"
+                    style="width:44px;height:44px;background:rgba(var(--v-theme-warning),0.12);flex-shrink:0">
+                    <VIcon icon="tabler-packages" color="warning" size="22" />
+                  </div>
+                  <div class="flex-grow-1">
+                    <div class="text-body-1 font-weight-bold">{{ b.name }}</div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ b.courses_count }} {{ $t('courses') }} ·
+                      {{ Number(b.price).toLocaleString() }} {{ $t('SAR') }} ·
+                      <template v-if="b.access_days">
+                        {{ b.access_days }} {{ $t('days access') }}
+                      </template>
+                      <template v-else>
+                        {{ $t('Lifetime access') }}
+                      </template>
+                    </div>
+                  </div>
+                  <VChip size="small" color="success" variant="tonal">{{ $t('Active') }}</VChip>
+                </div>
+              </div>
+            </VTabsWindowItem>
+          </VTabsWindow>
+        </VCardText>
+      </template>
+
       <VCardActions>
         <VSpacer />
-        <VBtn variant="outlined" @click="isProfileDialogVisible = false">{{ $t('Close') }}</VBtn>
+        <VBtn variant="outlined" @click="isDetailDialogVisible = false">{{ $t('Close') }}</VBtn>
       </VCardActions>
     </VCard>
   </VDialog>
@@ -169,7 +345,6 @@ onMounted(async () => {
           {{ $t('Add New Student') }}
         </VCardTitle>
       </VCardItem>
-
       <VCardText class="pt-2">
         <VTextField
           v-model="addForm.name"
@@ -180,7 +355,6 @@ onMounted(async () => {
           :error-messages="addErrors['name']"
           autofocus
         />
-
         <VTextField
           v-model="addForm.email"
           :label="$t('Email Address')"
@@ -190,7 +364,6 @@ onMounted(async () => {
           class="mb-3"
           :error-messages="addErrors['email']"
         />
-
         <VTextField
           v-model="addForm.password"
           :label="$t('Password')"
@@ -201,25 +374,18 @@ onMounted(async () => {
           :error-messages="addErrors['password']"
           @click:append-inner="isPasswordVisible = !isPasswordVisible"
         />
-
         <VAlert type="info" variant="tonal" class="mt-3" density="compact">
           {{ $t('Student role is assigned automatically.') }}
         </VAlert>
       </VCardText>
-
       <VCardActions>
         <VSpacer />
-        <VBtn variant="text" :disabled="isAdding" @click="isAddDialogVisible = false">
-          {{ $t('Cancel') }}
-        </VBtn>
+        <VBtn variant="text" :disabled="isAdding" @click="isAddDialogVisible = false">{{ $t('Cancel') }}</VBtn>
         <VBtn
-          color="primary"
-          :loading="isAdding"
+          color="primary" :loading="isAdding"
           :disabled="!addForm.name || !addForm.email || !addForm.password || isAdding"
           @click="submitAddStudent"
-        >
-          {{ $t('Create Student') }}
-        </VBtn>
+        >{{ $t('Create Student') }}</VBtn>
       </VCardActions>
     </VCard>
   </VDialog>
