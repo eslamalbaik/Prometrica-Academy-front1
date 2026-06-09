@@ -128,10 +128,12 @@ const moduleOptions = computed(() => {
   const opts: any[] = []
   if (Array.isArray(courses.value)) {
     courses.value.forEach(c => {
+      const courseTitle = c.title || c.name || 'Unknown Course'
       c.modules?.forEach((m: any) => {
+        const moduleTitle = m.title || m.name || `Module ${m.id}`
         opts.push({
           value: m.id,
-          title: `${c.title} - ${m.title}`
+          title: `${courseTitle} — ${moduleTitle}`
         })
       })
     })
@@ -246,8 +248,12 @@ const saveNewQuestion = async () => {
 const saveQuiz = async () => {
   const { title, passing_score, course_module_id, questionIds } = quizCRUDStore.activeQuiz
   
-  if (!title.trim() || !course_module_id) {
-    showAlert('Validation Error', 'Please fill in the title and select a module.')
+  if (!title || !title.trim()) {
+    showAlert('Validation Error', 'Please fill in the quiz title.')
+    return
+  }
+  if (course_module_id === null || course_module_id === undefined) {
+    showAlert('Validation Error', 'Please select a course module.')
     return
   }
 
@@ -370,11 +376,14 @@ const saveQuiz = async () => {
               <VTextField v-model="quizCRUDStore.activeQuiz.passing_score" :label="$t('quiz.editor.passing_score_label', 'Passing Score (%)')" type="number" variant="outlined" />
             </VCol>
             <VCol cols="12">
-              <VSelect 
-                v-model="quizCRUDStore.activeQuiz.course_module_id" 
-                :items="moduleOptions" 
-                :label="$t('quiz.editor.select_module', 'Select Course Module')" 
-                variant="outlined" 
+              <VSelect
+                v-model="quizCRUDStore.activeQuiz.course_module_id"
+                :items="moduleOptions"
+                item-title="title"
+                item-value="value"
+                :label="$t('quiz.editor.select_module', 'Select Course Module')"
+                variant="outlined"
+                :return-object="false"
               />
             </VCol>
           </VRow>
