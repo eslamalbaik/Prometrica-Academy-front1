@@ -4,6 +4,31 @@ import api from '@/plugins/axios'
 
 definePage({ meta: { requiresAdmin: true } })
 
+// ── Reset device lock ───────────────────────────────────────────────────────
+const resettingId  = ref<number | null>(null)
+const resetSnackbar = ref(false)
+const resetMessage  = ref('')
+
+const resetDeviceLock = async (enrollmentId: number) => {
+  resettingId.value = enrollmentId
+  try {
+    const res = await api.post(`/api/dashboard/enrollments/${enrollmentId}/reset-device`)
+    // Update the local record
+    const idx = enrollments.value.findIndex(e => e.id === enrollmentId)
+    if (idx !== -1) {
+      enrollments.value[idx].device_locked = false
+      enrollments.value[idx].device_id     = null
+    }
+    resetMessage.value = res.data.message || 'Device lock cleared.'
+    resetSnackbar.value = true
+  } catch (e: any) {
+    resetMessage.value = e?.response?.data?.message || 'Failed to reset lock.'
+    resetSnackbar.value = true
+  } finally {
+    resettingId.value = null
+  }
+}
+
 // ─── Table State ───────────────────────────────────────────────────────────
 const enrollments = ref<any[]>([])
 const isLoading   = ref(true)
@@ -129,17 +154,18 @@ onMounted(() => fetchEnrollments())
             <th>{{ $t('Email') }}</th>
             <th>{{ $t('Course') }}</th>
             <th>{{ $t('Progress') }}</th>
+            <th>{{ $t('Device') }}</th>
             <th>{{ $t('Enrolled Date') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="isLoading">
-            <td colspan="6" class="text-center pa-8">
+            <td colspan="7" class="text-center pa-8">
               <VProgressCircular indeterminate color="primary" />
             </td>
           </tr>
           <tr v-else-if="filteredEnrollments.length === 0">
-            <td colspan="6" class="text-center text-medium-emphasis pa-8">
+            <td colspan="7" class="text-center text-medium-emphasis pa-8">
               {{ $t('No enrollments found.') }}
             </td>
           </tr>
@@ -170,6 +196,31 @@ onMounted(() => fetchEnrollments())
                 <span class="text-caption text-medium-emphasis">{{ enrollment.progress }}%</span>
               </div>
             </td>
+            <!-- Device Lock Column -->
+            <td>
+              <div v-if="enrollment.device_locked" class="d-flex align-center gap-2">
+                <VChip size="small" color="warning" variant="tonal" prepend-icon="tabler-device-mobile">
+                  {{ $t('Locked') }}
+                </VChip>
+                <VBtn
+                  size="x-small"
+                  color="error"
+                  variant="tonal"
+                  icon="tabler-lock-open"
+                  :loading="resettingId === enrollment.id"
+                  :disabled="resettingId !== null"
+                  @click="resetDeviceLock(enrollment.id)"
+                >
+                  <VIcon icon="tabler-lock-open" />
+                  <VTooltip activator="parent" location="top">
+                    {{ $t('Reset Device Lock') }}
+                  </VTooltip>
+                </VBtn>
+              </div>
+              <VChip v-else size="small" color="success" variant="tonal" prepend-icon="tabler-device-mobile">
+                {{ $t('Free') }}
+              </VChip>
+            </td>
             <td class="text-caption text-medium-emphasis">
               {{ new Date(enrollment.enrolled_at).toLocaleDateString() }}
             </td>
@@ -188,6 +239,23 @@ onMounted(() => fetchEnrollments())
       </div>
     </VCardText>
   </VCard>
+
+  <!-- ─── Reset Device Snackbar ────────────────────────────────────────────── -->
+  <VSnackbar
+    v-model="resetSnackbar"
+    :timeout="3500"
+    color="surface"
+    location="bottom end"
+    variant="elevated"
+  >
+    <div class="d-flex align-center gap-2">
+      <VIcon icon="tabler-device-mobile" color="primary" />
+      <span>{{ resetMessage }}</span>
+    </div>
+    <template #actions>
+      <VBtn variant="text" size="small" @click="resetSnackbar = false">{{ $t('Close') }}</VBtn>
+    </template>
+  </VSnackbar>
 
   <!-- ─── Manual Enroll Dialog ─────────────────────────────────────────────── -->
   <VDialog v-model="isEnrollDialogVisible" max-width="480">
