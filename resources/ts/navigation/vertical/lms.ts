@@ -57,6 +57,11 @@ export default [
     icon: { icon: 'tabler-layout-grid' },
     to: 'pricing-plans',
   },
+  {
+    title: 'Bundles',
+    icon: { icon: 'tabler-packages' },
+    to: 'bundles',
+  },
 
   { heading: 'Engagement' },
   {
