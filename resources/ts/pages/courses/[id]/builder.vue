@@ -346,6 +346,83 @@ const formatSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+// ─── Lesson PDF Attachments ───────────────────────────────────────────────────
+const lessonAttachmentsMap      = ref<Record<number, any[]>>({})
+const isLessonUploadVisible     = ref(false)
+const isLessonUploading         = ref(false)
+const uploadLessonId            = ref<number | null>(null)
+const uploadLessonFile          = ref<File | null>(null)
+const uploadLessonTitle         = ref('')
+const lessonAttToDelete         = ref<any>(null)
+const isDeleteLessonAttVisible  = ref(false)
+const isDeletingLessonAtt       = ref(false)
+const activeLessonPdfId         = ref<number | null>(null)   // which lesson's PDF panel is open
+
+const loadLessonAttachments = async (lessonId: number) => {
+  try {
+    const res = await api.get(`/api/dashboard/lessons/${lessonId}/attachments`)
+    lessonAttachmentsMap.value[lessonId] = res.data
+  } catch (e) { console.error(e) }
+}
+
+const toggleLessonPdfPanel = async (lessonId: number) => {
+  if (activeLessonPdfId.value === lessonId) {
+    activeLessonPdfId.value = null
+    return
+  }
+  activeLessonPdfId.value = lessonId
+  if (!lessonAttachmentsMap.value[lessonId]) {
+    await loadLessonAttachments(lessonId)
+  }
+}
+
+const openLessonUploadDialog = (lessonId: number) => {
+  uploadLessonId.value    = lessonId
+  uploadLessonFile.value  = null
+  uploadLessonTitle.value = ''
+  isLessonUploadVisible.value = true
+}
+
+const onLessonFileChange = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  uploadLessonFile.value = input.files?.[0] ?? null
+  if (uploadLessonFile.value && !uploadLessonTitle.value)
+    uploadLessonTitle.value = uploadLessonFile.value.name.replace(/\.pdf$/i, '')
+}
+
+const submitLessonUpload = async () => {
+  if (!uploadLessonFile.value || !uploadLessonId.value) return
+  isLessonUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', uploadLessonFile.value)
+    formData.append('title', uploadLessonTitle.value || uploadLessonFile.value.name)
+    await api.post(`/api/dashboard/lessons/${uploadLessonId.value}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    isLessonUploadVisible.value = false
+    await loadLessonAttachments(uploadLessonId.value)
+  } catch (e) { console.error(e) }
+  finally { isLessonUploading.value = false }
+}
+
+const confirmDeleteLessonAtt = (att: any) => {
+  lessonAttToDelete.value = att
+  isDeleteLessonAttVisible.value = true
+}
+
+const executeDeleteLessonAtt = async () => {
+  isDeletingLessonAtt.value = true
+  try {
+    await api.delete(`/api/dashboard/lesson-attachments/${lessonAttToDelete.value.id}`)
+    const lessonId = lessonAttToDelete.value.lesson_id
+    isDeleteLessonAttVisible.value = false
+    lessonAttToDelete.value = null
+    await loadLessonAttachments(lessonId)
+  } catch (e) { console.error(e) }
+  finally { isDeletingLessonAtt.value = false }
+}
 </script>
 
 <template>
@@ -494,6 +571,17 @@ const formatSize = (bytes: number) => {
                 />
                 <VBtn
                   v-if="item.item_type === 'lesson'"
+                  :icon="activeLessonPdfId === item.id ? 'tabler-file-type-pdf' : 'tabler-file-type-pdf'"
+                  variant="tonal"
+                  size="x-small"
+                  :color="activeLessonPdfId === item.id ? 'error' : 'default'"
+                  @click.stop="toggleLessonPdfPanel(item.id)"
+                >
+                  <VIcon icon="tabler-file-type-pdf" />
+                  <VTooltip activator="parent" location="top">{{ $t('Lesson PDFs') }}</VTooltip>
+                </VBtn>
+                <VBtn
+                  v-if="item.item_type === 'lesson'"
                   icon="tabler-trash"
                   variant="text"
                   size="x-small"
@@ -501,6 +589,65 @@ const formatSize = (bytes: number) => {
                   @click.stop="confirmDeleteLesson(item)"
                 />
               </div>
+
+              <!-- Lesson PDF Panel (inline, below lesson row) -->
+              <VExpandTransition>
+                <div
+                  v-if="item.item_type === 'lesson' && activeLessonPdfId === item.id"
+                  class="rounded-lg pa-3 mb-1 ms-10"
+                  style="background: rgba(var(--v-theme-error), 0.04); border: 1px dashed rgba(var(--v-theme-error), 0.3)"
+                >
+                  <div class="d-flex justify-space-between align-center mb-2">
+                    <div class="d-flex align-center gap-2">
+                      <VIcon icon="tabler-paperclip" size="16" color="error" />
+                      <span class="text-caption font-weight-semibold">{{ $t('PDF Files') }}</span>
+                      <VChip size="x-small" color="error" variant="tonal">
+                        {{ (lessonAttachmentsMap[item.id] || []).length }}
+                      </VChip>
+                    </div>
+                    <VBtn
+                      size="x-small"
+                      color="error"
+                      variant="tonal"
+                      prepend-icon="tabler-upload"
+                      @click.stop="openLessonUploadDialog(item.id)"
+                    >
+                      {{ $t('Upload PDF') }}
+                    </VBtn>
+                  </div>
+
+                  <div v-if="lessonAttachmentsMap[item.id] && lessonAttachmentsMap[item.id].length > 0">
+                    <div
+                      v-for="att in lessonAttachmentsMap[item.id]"
+                      :key="att.id"
+                      class="d-flex align-center gap-2 rounded pa-2 mb-1"
+                      style="background: rgba(var(--v-theme-surface), 0.8)"
+                    >
+                      <VIcon icon="tabler-file-type-pdf" size="16" color="error" />
+                      <div class="flex-grow-1">
+                        <div class="text-caption font-weight-medium">{{ att.title }}</div>
+                        <div class="text-caption text-medium-emphasis">{{ formatSize(att.file_size) }}</div>
+                      </div>
+                      <VBtn
+                        icon="tabler-download"
+                        variant="text"
+                        size="x-small"
+                        color="primary"
+                        :href="`${API_STORAGE}/storage/${att.file_path}`"
+                        target="_blank"
+                      />
+                      <VBtn
+                        icon="tabler-trash"
+                        variant="text"
+                        size="x-small"
+                        color="error"
+                        @click.stop="confirmDeleteLessonAtt({ ...att, lesson_id: item.id })"
+                      />
+                    </div>
+                  </div>
+                  <p v-else class="text-caption text-medium-emphasis">{{ $t('No PDFs attached to this lesson yet.') }}</p>
+                </div>
+              </VExpandTransition>
             </div>
 
             <p v-else class="text-medium-emphasis text-body-2 mb-4">
@@ -789,7 +936,7 @@ const formatSize = (bytes: number) => {
       </VCard>
     </VDialog>
 
-    <!-- Delete Attachment -->
+    <!-- Delete Module Attachment -->
     <VDialog v-model="isDeleteAttachVisible" max-width="400">
       <VCard>
         <VCardItem>
@@ -805,6 +952,78 @@ const formatSize = (bytes: number) => {
           <VSpacer />
           <VBtn variant="text" @click="isDeleteAttachVisible = false">{{ $t('Cancel') }}</VBtn>
           <VBtn color="error" :loading="isDeletingAttachment" @click="executeDeleteAttachment">{{ $t('Yes, Delete') }}</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Upload Lesson PDF -->
+    <VDialog v-model="isLessonUploadVisible" max-width="500">
+      <VCard>
+        <VCardItem>
+          <VCardTitle class="d-flex align-center gap-2">
+            <VIcon icon="tabler-file-type-pdf" color="error" />
+            {{ $t('Upload Lesson PDF') }}
+          </VCardTitle>
+        </VCardItem>
+        <VCardText>
+          <VRow>
+            <VCol cols="12">
+              <VTextField
+                v-model="uploadLessonTitle"
+                :label="$t('Title (optional)')"
+                variant="outlined"
+                :placeholder="$t('Leave blank to use filename')"
+              />
+            </VCol>
+            <VCol cols="12">
+              <div
+                class="rounded-lg border-2 border-dashed pa-6 text-center cursor-pointer"
+                style="border-color: rgba(var(--v-theme-error), 0.5); background: rgba(var(--v-theme-error), 0.04)"
+                @click="($refs.lessonPdfInput as HTMLInputElement).click()"
+              >
+                <VIcon icon="tabler-upload" size="36" color="error" class="mb-2" />
+                <p class="text-body-2 font-weight-semibold text-error">
+                  {{ uploadLessonFile ? uploadLessonFile.name : $t('Click to choose PDF file') }}
+                </p>
+                <p v-if="uploadLessonFile" class="text-caption text-medium-emphasis">{{ formatSize(uploadLessonFile.size) }}</p>
+                <p v-else class="text-caption text-medium-emphasis">PDF • {{ $t('Max 20MB') }}</p>
+                <input ref="lessonPdfInput" type="file" accept=".pdf,application/pdf" class="d-none" @change="onLessonFileChange" />
+              </div>
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="isLessonUploadVisible = false">{{ $t('Cancel') }}</VBtn>
+          <VBtn
+            color="error"
+            :loading="isLessonUploading"
+            :disabled="!uploadLessonFile"
+            prepend-icon="tabler-upload"
+            @click="submitLessonUpload"
+          >
+            {{ $t('Upload') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Delete Lesson Attachment -->
+    <VDialog v-model="isDeleteLessonAttVisible" max-width="400">
+      <VCard>
+        <VCardItem>
+          <VCardTitle class="d-flex align-center gap-2 text-error">
+            <VIcon icon="tabler-trash" color="error" />
+            {{ $t('Delete Lesson PDF') }}
+          </VCardTitle>
+        </VCardItem>
+        <VCardText>
+          <p>{{ $t('Delete attachment') }} <strong>{{ lessonAttToDelete?.title }}</strong>?</p>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="isDeleteLessonAttVisible = false">{{ $t('Cancel') }}</VBtn>
+          <VBtn color="error" :loading="isDeletingLessonAtt" @click="executeDeleteLessonAtt">{{ $t('Yes, Delete') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
