@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, storeToRefs } from 'vue'
 import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 import { useQuizCRUDStore } from '@/stores/quizCRUDStore'
@@ -8,6 +8,13 @@ definePage({ meta: { requiresAdmin: true } })
 
 const queryClient = useQueryClient()
 const quizCRUDStore = useQuizCRUDStore()
+const { activeQuiz } = storeToRefs(quizCRUDStore)
+
+// Computed getter/setter to guarantee Pinia reactivity with VSelect
+const selectedModuleId = computed({
+  get: () => activeQuiz.value.course_module_id,
+  set: (val: number | null) => { activeQuiz.value.course_module_id = val ? Number(val) : null }
+})
 
 // Dialog and Submitting States
 const isCreateDialog = ref(false)
@@ -246,13 +253,16 @@ const saveNewQuestion = async () => {
 
 // Save Quiz
 const saveQuiz = async () => {
-  const { title, passing_score, course_module_id, questionIds } = quizCRUDStore.activeQuiz
-  
+  const title = activeQuiz.value.title
+  const passing_score = activeQuiz.value.passing_score
+  const course_module_id = activeQuiz.value.course_module_id
+  const questionIds = activeQuiz.value.questionIds
+
   if (!title || !title.trim()) {
     showAlert('Validation Error', 'Please fill in the quiz title.')
     return
   }
-  if (course_module_id === null || course_module_id === undefined) {
+  if (!course_module_id) {
     showAlert('Validation Error', 'Please select a course module.')
     return
   }
@@ -377,13 +387,13 @@ const saveQuiz = async () => {
             </VCol>
             <VCol cols="12">
               <VSelect
-                v-model="quizCRUDStore.activeQuiz.course_module_id"
+                v-model="selectedModuleId"
                 :items="moduleOptions"
                 item-title="title"
                 item-value="value"
+                :return-object="false"
                 :label="$t('quiz.editor.select_module', 'Select Course Module')"
                 variant="outlined"
-                :return-object="false"
               />
             </VCol>
           </VRow>
