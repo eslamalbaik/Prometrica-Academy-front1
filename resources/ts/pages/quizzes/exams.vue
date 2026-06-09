@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, storeToRefs } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 import { useQuizCRUDStore } from '@/stores/quizCRUDStore'
