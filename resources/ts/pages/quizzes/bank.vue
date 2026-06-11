@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 
@@ -65,6 +65,8 @@ const questionForm = ref({
 
 const openCreateDialog = () => {
   editingQuestion.value = null
+  optionImageUrls.value.forEach(url => { if (url) URL.revokeObjectURL(url) })
+  optionImageUrls.value = [null, null]
   questionForm.value = {
     question_text: '',
     options: [
@@ -77,6 +79,8 @@ const openCreateDialog = () => {
 
 const openEditDialog = (q: any) => {
   editingQuestion.value = q
+  optionImageUrls.value.forEach(url => { if (url) URL.revokeObjectURL(url) })
+  optionImageUrls.value = q.options.map(() => null)
   questionForm.value = {
     question_text: q.question_text,
     options: q.options.map((o: any) => ({
@@ -91,25 +95,44 @@ const openEditDialog = (q: any) => {
 
 const addOption = () => {
   questionForm.value.options.push({ option_text: '', is_correct: false, image: null, image_path: null })
+  optionImageUrls.value.push(null)
 }
 
-const optionImagePreviews = computed(() =>
-  questionForm.value.options.map(opt => {
-    if (opt.image) return URL.createObjectURL(opt.image)
-    if (opt.image_path) return `/storage/${opt.image_path}`
-    return null
-  })
-)
+// Store object URLs separately to avoid createObjectURL on every computed call
+const optionImageUrls = ref<(string | null)[]>([null, null])
+const optionFileInputs = ref<HTMLInputElement[]>([])
+
+const getOptionImagePreview = (idx: number): string | null => {
+  if (optionImageUrls.value[idx]) return optionImageUrls.value[idx]
+  if (questionForm.value.options[idx]?.image_path) return `/storage/${questionForm.value.options[idx].image_path}`
+  return null
+}
+
+const triggerOptionImageInput = (idx: number) => {
+  optionFileInputs.value[idx]?.click()
+}
 
 const onOptionImageChange = (idx: number, event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (optionImageUrls.value[idx]) {
+    URL.revokeObjectURL(optionImageUrls.value[idx]!)
+    optionImageUrls.value[idx] = null
+  }
   questionForm.value.options[idx].image = file
-  if (file) questionForm.value.options[idx].image_path = null
+  if (file) {
+    questionForm.value.options[idx].image_path = null
+    optionImageUrls.value[idx] = URL.createObjectURL(file)
+  }
 }
 
 const removeOptionImage = (idx: number) => {
+  if (optionImageUrls.value[idx]) {
+    URL.revokeObjectURL(optionImageUrls.value[idx]!)
+    optionImageUrls.value[idx] = null
+  }
   questionForm.value.options[idx].image = null
   questionForm.value.options[idx].image_path = null
+  if (optionFileInputs.value[idx]) optionFileInputs.value[idx].value = ''
 }
 
 const removeOption = (idx: number) => {
@@ -124,9 +147,7 @@ const setCorrectOption = (idx: number) => {
 
 watch(isQuestionDialog, (open) => {
   if (!open) {
-    questionForm.value.options.forEach(opt => {
-      if (opt.image) URL.revokeObjectURL(URL.createObjectURL(opt.image))
-    })
+    optionImageUrls.value.forEach(url => { if (url) URL.revokeObjectURL(url) })
   }
 })
 
@@ -366,9 +387,9 @@ const deleteQuestion = (id: number) => {
 
               <!-- Option image area -->
               <div class="d-flex align-center gap-2 mt-2 ms-8">
-                <template v-if="optionImagePreviews[oIdx]">
+                <template v-if="getOptionImagePreview(oIdx)">
                   <VImg
-                    :src="optionImagePreviews[oIdx]"
+                    :src="getOptionImagePreview(oIdx)"
                     width="60"
                     height="60"
                     cover
@@ -382,24 +403,22 @@ const deleteQuestion = (id: number) => {
                     @click="removeOptionImage(oIdx)"
                   />
                 </template>
-                <label :for="`option-img-${oIdx}`" style="cursor:pointer;">
-                  <VBtn
-                    variant="tonal"
-                    color="secondary"
-                    size="x-small"
-                    prepend-icon="tabler-photo-up"
-                    as="span"
-                  >
-                    {{ optionImagePreviews[oIdx] ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
-                  </VBtn>
-                  <input
-                    :id="`option-img-${oIdx}`"
-                    type="file"
-                    accept="image/jpg,image/jpeg,image/png,image/webp"
-                    style="display:none"
-                    @change="onOptionImageChange(oIdx, $event)"
-                  />
-                </label>
+                <input
+                  :ref="(el) => { if (el) optionFileInputs[oIdx] = el as HTMLInputElement }"
+                  type="file"
+                  accept="image/jpg,image/jpeg,image/png,image/webp"
+                  style="display:none"
+                  @change="onOptionImageChange(oIdx, $event)"
+                />
+                <VBtn
+                  variant="tonal"
+                  color="secondary"
+                  size="x-small"
+                  prepend-icon="tabler-photo-up"
+                  @click="triggerOptionImageInput(oIdx)"
+                >
+                  {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+                </VBtn>
               </div>
             </div>
           </VRadioGroup>
