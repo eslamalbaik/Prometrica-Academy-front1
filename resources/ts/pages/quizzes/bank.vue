@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 
@@ -58,8 +58,8 @@ const editingQuestion = ref<any>(null)
 const questionForm = ref({
   question_text: '',
   options: [
-    { option_text: '', is_correct: true },
-    { option_text: '', is_correct: false }
+    { option_text: '', is_correct: true,  image: null as File | null, image_path: null as string | null },
+    { option_text: '', is_correct: false, image: null as File | null, image_path: null as string | null }
   ]
 })
 
@@ -68,8 +68,8 @@ const openCreateDialog = () => {
   questionForm.value = {
     question_text: '',
     options: [
-      { option_text: '', is_correct: true },
-      { option_text: '', is_correct: false }
+      { option_text: '', is_correct: true,  image: null, image_path: null },
+      { option_text: '', is_correct: false, image: null, image_path: null }
     ]
   }
   isQuestionDialog.value = true
@@ -81,14 +81,35 @@ const openEditDialog = (q: any) => {
     question_text: q.question_text,
     options: q.options.map((o: any) => ({
       option_text: o.option_text,
-      is_correct: !!o.is_correct
+      is_correct: !!o.is_correct,
+      image: null,
+      image_path: o.image_path || null
     }))
   }
   isQuestionDialog.value = true
 }
 
 const addOption = () => {
-  questionForm.value.options.push({ option_text: '', is_correct: false })
+  questionForm.value.options.push({ option_text: '', is_correct: false, image: null, image_path: null })
+}
+
+const optionImagePreviews = computed(() =>
+  questionForm.value.options.map(opt => {
+    if (opt.image) return URL.createObjectURL(opt.image)
+    if (opt.image_path) return `/storage/${opt.image_path}`
+    return null
+  })
+)
+
+const onOptionImageChange = (idx: number, event: Event) => {
+  const file = (event.target as HTMLInputElement).files?.[0] ?? null
+  questionForm.value.options[idx].image = file
+  if (file) questionForm.value.options[idx].image_path = null
+}
+
+const removeOptionImage = (idx: number) => {
+  questionForm.value.options[idx].image = null
+  questionForm.value.options[idx].image_path = null
 }
 
 const removeOption = (idx: number) => {
@@ -100,6 +121,14 @@ const setCorrectOption = (idx: number) => {
     opt.is_correct = (oIdx === idx)
   })
 }
+
+watch(isQuestionDialog, (open) => {
+  if (!open) {
+    questionForm.value.options.forEach(opt => {
+      if (opt.image) URL.revokeObjectURL(URL.createObjectURL(opt.image))
+    })
+  }
+})
 
 const isConfirmOpen = ref(false)
 const confirmTitle = ref('')
@@ -156,10 +185,22 @@ const saveQuestion = async () => {
 
   isSubmitting.value = true
   try {
+    const formData = new FormData()
+    formData.append('question_text', questionForm.value.question_text)
+
+    questionForm.value.options.forEach((opt, i) => {
+      formData.append(`options[${i}][option_text]`, opt.option_text)
+      formData.append(`options[${i}][is_correct]`, opt.is_correct ? '1' : '0')
+      if (opt.image) {
+        formData.append(`option_images[${i}]`, opt.image)
+      }
+    })
+
     if (editingQuestion.value) {
-      await api.put(`/api/v1/tenant/questions/${editingQuestion.value.id}`, questionForm.value)
+      formData.append('_method', 'PUT')
+      await api.post(`/api/v1/tenant/questions/${editingQuestion.value.id}`, formData)
     } else {
-      await api.post('/api/v1/tenant/questions', questionForm.value)
+      await api.post('/api/v1/tenant/questions', formData)
     }
     isQuestionDialog.value = false
     queryClient.invalidateQueries({ queryKey: ['questions'] })
@@ -240,13 +281,14 @@ const deleteQuestion = (id: number) => {
               </td>
               <td>
                 <div class="d-flex flex-column gap-1 my-2">
-                  <div 
-                    v-for="o in q.options" 
-                    :key="o.id" 
+                  <div
+                    v-for="o in q.options"
+                    :key="o.id"
                     class="text-caption d-flex align-center gap-1"
                     :class="o.is_correct ? 'text-success font-weight-bold' : 'text-medium-emphasis'"
                   >
                     <VIcon :icon="o.is_correct ? 'tabler-circle-check-filled' : 'tabler-circle'" size="14" />
+                    <VImg v-if="o.image_path" :src="`/storage/${o.image_path}`" width="24" height="24" cover class="rounded" />
                     <span>{{ o.option_text }}</span>
                   </div>
                 </div>
@@ -307,18 +349,58 @@ const deleteQuestion = (id: number) => {
             hide-details
             class="mb-4"
           >
-            <div v-for="(opt, oIdx) in questionForm.options" :key="oIdx" class="d-flex align-center gap-2 mb-3">
-              <VRadio :value="oIdx" color="success" />
-              <VTextField 
-                v-model="opt.option_text" 
-                :label="`${$t('question.bank.option', 'Option')} ${oIdx + 1}`" 
-                variant="outlined" 
-                density="compact" 
-                hide-details 
-                class="flex-grow-1"
-                required
-              />
-              <VBtn icon="tabler-trash" variant="text" color="error" size="small" @click="removeOption(oIdx)" v-if="questionForm.options.length > 2" />
+            <div v-for="(opt, oIdx) in questionForm.options" :key="oIdx" class="mb-4">
+              <div class="d-flex align-center gap-2">
+                <VRadio :value="oIdx" color="success" />
+                <VTextField
+                  v-model="opt.option_text"
+                  :label="`${$t('question.bank.option', 'Option')} ${oIdx + 1}`"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  class="flex-grow-1"
+                  required
+                />
+                <VBtn icon="tabler-trash" variant="text" color="error" size="small" @click="removeOption(oIdx)" v-if="questionForm.options.length > 2" />
+              </div>
+
+              <!-- Option image area -->
+              <div class="d-flex align-center gap-2 mt-2 ms-8">
+                <template v-if="optionImagePreviews[oIdx]">
+                  <VImg
+                    :src="optionImagePreviews[oIdx]"
+                    width="60"
+                    height="60"
+                    cover
+                    class="rounded border"
+                  />
+                  <VBtn
+                    icon="tabler-x"
+                    variant="text"
+                    color="error"
+                    size="x-small"
+                    @click="removeOptionImage(oIdx)"
+                  />
+                </template>
+                <label :for="`option-img-${oIdx}`" style="cursor:pointer;">
+                  <VBtn
+                    variant="tonal"
+                    color="secondary"
+                    size="x-small"
+                    prepend-icon="tabler-photo-up"
+                    as="span"
+                  >
+                    {{ optionImagePreviews[oIdx] ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+                  </VBtn>
+                  <input
+                    :id="`option-img-${oIdx}`"
+                    type="file"
+                    accept="image/jpg,image/jpeg,image/png,image/webp"
+                    style="display:none"
+                    @change="onOptionImageChange(oIdx, $event)"
+                  />
+                </label>
+              </div>
             </div>
           </VRadioGroup>
 

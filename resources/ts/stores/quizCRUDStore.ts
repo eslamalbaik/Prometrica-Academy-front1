@@ -6,6 +6,7 @@ export interface Option {
   question_id?: number
   option_text: string
   is_correct: boolean
+  image_path?: string | null
 }
 
 export interface Question {
@@ -68,7 +69,8 @@ export const useQuizCRUDStore = defineStore('quizCRUD', () => {
               id: o.id,
               question_id: o.question_id,
               option_text: o.option_text,
-              is_correct: !!o.is_correct
+              is_correct: !!o.is_correct,
+              image_path: o.image_path || null
             }))
           }
           ids.push(q.id)
