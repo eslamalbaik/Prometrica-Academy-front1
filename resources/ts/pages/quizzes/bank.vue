@@ -65,8 +65,6 @@ const questionForm = ref({
 
 const openCreateDialog = () => {
   editingQuestion.value = null
-  optionImageUrls.value.forEach(url => { if (url) URL.revokeObjectURL(url) })
-  optionImageUrls.value = [null, null]
   questionForm.value = {
     question_text: '',
     options: [
@@ -79,8 +77,6 @@ const openCreateDialog = () => {
 
 const openEditDialog = (q: any) => {
   editingQuestion.value = q
-  optionImageUrls.value.forEach(url => { if (url) URL.revokeObjectURL(url) })
-  optionImageUrls.value = q.options.map(() => null)
   questionForm.value = {
     question_text: q.question_text,
     options: q.options.map((o: any) => ({
@@ -95,44 +91,25 @@ const openEditDialog = (q: any) => {
 
 const addOption = () => {
   questionForm.value.options.push({ option_text: '', is_correct: false, image: null, image_path: null })
-  optionImageUrls.value.push(null)
-}
-
-// Store object URLs separately to avoid createObjectURL on every computed call
-const optionImageUrls = ref<(string | null)[]>([null, null])
-const optionFileInputs = ref<HTMLInputElement[]>([])
-
-const getOptionImagePreview = (idx: number): string | null => {
-  if (optionImageUrls.value[idx]) return optionImageUrls.value[idx]
-  if (questionForm.value.options[idx]?.image_path) return `/storage/${questionForm.value.options[idx].image_path}`
-  return null
-}
-
-const triggerOptionImageInput = (idx: number) => {
-  optionFileInputs.value[idx]?.click()
 }
 
 const onOptionImageChange = (idx: number, event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0] ?? null
-  if (optionImageUrls.value[idx]) {
-    URL.revokeObjectURL(optionImageUrls.value[idx]!)
-    optionImageUrls.value[idx] = null
-  }
   questionForm.value.options[idx].image = file
-  if (file) {
-    questionForm.value.options[idx].image_path = null
-    optionImageUrls.value[idx] = URL.createObjectURL(file)
-  }
+  if (file) questionForm.value.options[idx].image_path = null
 }
 
 const removeOptionImage = (idx: number) => {
-  if (optionImageUrls.value[idx]) {
-    URL.revokeObjectURL(optionImageUrls.value[idx]!)
-    optionImageUrls.value[idx] = null
-  }
   questionForm.value.options[idx].image = null
   questionForm.value.options[idx].image_path = null
-  if (optionFileInputs.value[idx]) optionFileInputs.value[idx].value = ''
+}
+
+const getOptionImagePreview = (idx: number): string | null => {
+  const opt = questionForm.value.options[idx]
+  if (!opt) return null
+  if (opt.image) return URL.createObjectURL(opt.image)
+  if (opt.image_path) return `/storage/${opt.image_path}`
+  return null
 }
 
 const removeOption = (idx: number) => {
@@ -145,11 +122,6 @@ const setCorrectOption = (idx: number) => {
   })
 }
 
-watch(isQuestionDialog, (open) => {
-  if (!open) {
-    optionImageUrls.value.forEach(url => { if (url) URL.revokeObjectURL(url) })
-  }
-})
 
 const isConfirmOpen = ref(false)
 const confirmTitle = ref('')
@@ -400,25 +372,25 @@ const deleteQuestion = (id: number) => {
                     variant="text"
                     color="error"
                     size="x-small"
-                    @click="removeOptionImage(oIdx)"
+                    @click.stop="removeOptionImage(oIdx)"
                   />
                 </template>
-                <input
-                  :ref="(el) => { if (el) optionFileInputs[oIdx] = el as HTMLInputElement }"
-                  type="file"
-                  accept="image/jpg,image/jpeg,image/png,image/webp"
-                  style="display:none"
-                  @change="onOptionImageChange(oIdx, $event)"
-                />
-                <VBtn
-                  variant="tonal"
-                  color="secondary"
-                  size="x-small"
-                  prepend-icon="tabler-photo-up"
-                  @click="triggerOptionImageInput(oIdx)"
-                >
-                  {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
-                </VBtn>
+                <div style="position:relative; display:inline-flex;">
+                  <VBtn
+                    variant="tonal"
+                    color="secondary"
+                    size="x-small"
+                    prepend-icon="tabler-photo-up"
+                  >
+                    {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+                  </VBtn>
+                  <input
+                    type="file"
+                    accept="image/jpg,image/jpeg,image/png,image/webp"
+                    style="position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%;"
+                    @change="onOptionImageChange(oIdx, $event)"
+                  />
+                </div>
               </div>
             </div>
           </VRadioGroup>
