@@ -51,11 +51,16 @@ axiosIns.interceptors.response.use(
         .then(({ useAuthStore }) => {
           useAuthStore().logout()
         })
-        .catch(e => {
+        .catch(() => {
           // Ignore if store not available
         })
-      
+
       if (typeof localStorage !== 'undefined') {
+        // FTR-001: Persist a flag so the login page can show "session terminated" message
+        const isLoginPage = window.location.pathname === '/login' || window.location.pathname === '/admin/login'
+        if (!isLoginPage) {
+          localStorage.setItem('session_terminated', '1')
+        }
         localStorage.removeItem('accessToken')
         localStorage.removeItem('userData')
       }
