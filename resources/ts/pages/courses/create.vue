@@ -19,7 +19,6 @@ const steps = ['Basic Info', 'Content', 'SEO', 'Pricing', 'Publish']
 
 const form = ref({
   title: '',
-  slug: '',
   short_description: '',
   description: '',
   thumbnail: null as File | null,
@@ -135,13 +134,6 @@ const submitCourse = () => {
                   placeholder="e.g. Advanced Clinical Pharmacology"
                   class="mb-4"
                   :error-messages="validationErrors.title"
-                />
-                <VTextField
-                  v-model="form.slug"
-                  :label="$t('Course Slug')"
-                  placeholder="advanced-clinical-pharmacology"
-                  class="mb-4"
-                  :error-messages="validationErrors.slug"
                 />
                 <VTextarea
                   v-model="form.short_description"
