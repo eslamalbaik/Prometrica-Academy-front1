@@ -79,8 +79,8 @@ const removeOption = (i: number) => options.value.splice(i, 1)
 const selectCorrect = (i: number) =>
   options.value.forEach((o, idx) => { o.is_correct = idx === i })
 
-const onFileChange = (i: number, files: any) => {
-  const f = Array.isArray(files) ? files[0] : files
+const onFileChange = (i: number, event: Event) => {
+  const f = (event.target as HTMLInputElement).files?.[0] ?? null
   options.value[i].imageFile  = f ?? null
   if (f) options.value[i].image_path = null
 }
@@ -293,30 +293,27 @@ const runConfirm = async () => {
               />
             </div>
 
-            <!-- Row 2: image upload -->
-            <div class="d-flex align-center gap-3" style="padding-inline-start:30px">
-              <!-- Preview -->
+            <!-- Row 2: image upload — native HTML only, no Vuetify -->
+            <div style="padding-inline-start:30px; margin-top:10px;">
               <img
                 v-if="previewUrl(i)"
                 :src="previewUrl(i)!"
-                style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid #ddd;flex-shrink:0;"
+                style="display:block; width:60px; height:60px; object-fit:cover; border-radius:6px; border:1px solid #ddd; margin-bottom:6px;"
               />
-
-              <!-- VFileInput — official Vuetify file picker -->
-              <VFileInput
-                :key="`file-${i}`"
-                clearable
-                hide-details
-                density="compact"
-                variant="outlined"
-                prepend-icon=""
-                prepend-inner-icon="tabler-camera"
-                accept="image/jpg,image/jpeg,image/png,image/webp"
-                :placeholder="$t('question.bank.add_image', 'Add Image')"
-                style="max-width:210px"
-                @update:model-value="(f: any) => onFileChange(i, f)"
-                @click:clear="clearImage(i)"
-              />
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input
+                  type="file"
+                  accept="image/jpg,image/jpeg,image/png,image/webp"
+                  style="font-size:13px; cursor:pointer;"
+                  @change="onFileChange(i, $event)"
+                />
+                <button
+                  v-if="previewUrl(i)"
+                  type="button"
+                  style="font-size:12px; color:red; background:none; border:none; cursor:pointer; padding:0;"
+                  @click="clearImage(i)"
+                >✕ حذف</button>
+              </div>
             </div>
           </div>
 
