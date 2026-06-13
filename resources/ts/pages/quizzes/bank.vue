@@ -334,65 +334,65 @@ const deleteQuestion = (id: number) => {
             required
           />
 
-          <div class="text-subtitle-1 font-weight-bold mb-2">{{ $t('question.bank.options_title', 'Options (Select the correct one)') }}</div>
-          
-          <VRadioGroup 
-            :model-value="questionForm.options.findIndex(o => o.is_correct)" 
-            @update:model-value="(val) => setCorrectOption(val as number)"
-            hide-details
-            class="mb-4"
-          >
-            <div v-for="(opt, oIdx) in questionForm.options" :key="oIdx" class="mb-4">
-              <div class="d-flex align-center gap-2">
-                <VRadio :value="oIdx" color="success" />
-                <VTextField
-                  v-model="opt.option_text"
-                  :label="`${$t('question.bank.option', 'Option')} ${oIdx + 1}`"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
-                  class="flex-grow-1"
-                  required
-                />
-                <VBtn icon="tabler-trash" variant="text" color="error" size="small" @click="removeOption(oIdx)" v-if="questionForm.options.length > 2" />
+          <div class="text-subtitle-1 font-weight-bold mb-3">{{ $t('question.bank.options_title', 'Options (Select the correct one)') }}</div>
+
+          <div v-for="(opt, oIdx) in questionForm.options" :key="oIdx" class="mb-3 pa-3 border rounded">
+            <!-- Option row -->
+            <div class="d-flex align-center gap-2">
+              <!-- Custom radio circle -->
+              <div
+                style="width:20px; height:20px; border-radius:50%; border:2px solid #aaa; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:border-color .2s;"
+                :style="opt.is_correct ? 'border-color:#4CAF50; background:#4CAF50;' : ''"
+                @click="setCorrectOption(oIdx)"
+              >
+                <div v-if="opt.is_correct" style="width:8px; height:8px; border-radius:50%; background:#fff;" />
               </div>
 
-              <!-- Option image area -->
-              <div class="d-flex align-center gap-2 mt-2 ms-8">
-                <template v-if="getOptionImagePreview(oIdx)">
-                  <VImg
-                    :src="getOptionImagePreview(oIdx)"
-                    width="60"
-                    height="60"
-                    cover
-                    class="rounded border"
-                  />
-                  <VBtn
-                    icon="tabler-x"
-                    variant="text"
-                    color="error"
-                    size="x-small"
-                    @click.stop="removeOptionImage(oIdx)"
-                  />
-                </template>
+              <VTextField
+                v-model="opt.option_text"
+                :label="`${$t('question.bank.option', 'Option')} ${oIdx + 1}`"
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="flex-grow-1"
+              />
 
-                <input
-                  :id="`opt-img-${oIdx}`"
-                  type="file"
-                  accept="image/jpg,image/jpeg,image/png,image/webp"
-                  style="display:none"
-                  @change="onOptionImageChange(oIdx, $event)"
-                />
-                <label
-                  :for="`opt-img-${oIdx}`"
-                  style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:6px; font-size:12px; cursor:pointer; background:rgba(128,128,128,0.12); color:inherit; user-select:none;"
-                >
-                  <VIcon icon="tabler-photo-up" size="16" />
-                  {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
-                </label>
-              </div>
+              <VBtn
+                v-if="questionForm.options.length > 2"
+                icon="tabler-trash"
+                variant="text"
+                color="error"
+                size="small"
+                @click="removeOption(oIdx)"
+              />
             </div>
-          </VRadioGroup>
+
+            <!-- Image upload row -->
+            <div class="d-flex align-center gap-2 mt-2" style="padding-inline-start: 28px;">
+              <template v-if="getOptionImagePreview(oIdx)">
+                <img
+                  :src="getOptionImagePreview(oIdx)!"
+                  style="width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid #ddd;"
+                />
+                <VBtn icon="tabler-x" variant="text" color="error" size="x-small" @click="removeOptionImage(oIdx)" />
+              </template>
+
+              <input
+                :id="`opt-img-${oIdx}`"
+                type="file"
+                accept="image/jpg,image/jpeg,image/png,image/webp"
+                style="display:none"
+                @change="onOptionImageChange(oIdx, $event)"
+              />
+              <label
+                :for="`opt-img-${oIdx}`"
+                style="display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:6px; font-size:12px; cursor:pointer; background:rgba(100,100,100,0.1); user-select:none;"
+              >
+                <VIcon icon="tabler-photo-up" size="16" />
+                {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+              </label>
+            </div>
+          </div>
 
           <VBtn variant="text" size="small" color="primary" prepend-icon="tabler-plus" @click="addOption">
             {{ $t('question.bank.add_option', 'Add Option') }}
