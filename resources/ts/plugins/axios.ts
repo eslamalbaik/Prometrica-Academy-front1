@@ -32,6 +32,13 @@ axiosIns.interceptors.request.use(config => {
   }
   // Backend returns validation/error messages in this language.
   config.headers['X-Locale'] = currentLocale()
+
+  // When sending FormData (file uploads), remove Content-Type so axios sets
+  // multipart/form-data with the correct boundary automatically.
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
+
   return config
 })
 
