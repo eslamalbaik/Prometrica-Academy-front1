@@ -375,22 +375,21 @@ const deleteQuestion = (id: number) => {
                     @click.stop="removeOptionImage(oIdx)"
                   />
                 </template>
-                <div style="position:relative; display:inline-flex;">
-                  <VBtn
-                    variant="tonal"
-                    color="secondary"
-                    size="x-small"
-                    prepend-icon="tabler-photo-up"
-                  >
-                    {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
-                  </VBtn>
-                  <input
-                    type="file"
-                    accept="image/jpg,image/jpeg,image/png,image/webp"
-                    style="position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%;"
-                    @change="onOptionImageChange(oIdx, $event)"
-                  />
-                </div>
+
+                <input
+                  :id="`opt-img-${oIdx}`"
+                  type="file"
+                  accept="image/jpg,image/jpeg,image/png,image/webp"
+                  style="display:none"
+                  @change="onOptionImageChange(oIdx, $event)"
+                />
+                <label
+                  :for="`opt-img-${oIdx}`"
+                  style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:6px; font-size:12px; cursor:pointer; background:rgba(128,128,128,0.12); color:inherit; user-select:none;"
+                >
+                  <VIcon icon="tabler-photo-up" size="16" />
+                  {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+                </label>
               </div>
             </div>
           </VRadioGroup>
