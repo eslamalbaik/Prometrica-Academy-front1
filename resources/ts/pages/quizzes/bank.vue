@@ -108,8 +108,8 @@ const revokeObjectUrl = (file: File | null) => {
   }
 }
 
-const onOptionImageChange = (idx: number, event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0] ?? null
+const onOptionFileInputChange = (idx: number, files: File[]) => {
+  const file = files?.[0] ?? null
   revokeObjectUrl(questionForm.value.options[idx].image)
   questionForm.value.options[idx].image = file
   if (file) questionForm.value.options[idx].image_path = null
@@ -386,32 +386,24 @@ const deleteQuestion = (id: number) => {
 
             <!-- Image upload row -->
             <div class="d-flex align-center gap-2 mt-2" style="padding-inline-start: 28px;">
-              <template v-if="getOptionImagePreview(oIdx)">
-                <img
-                  :src="getOptionImagePreview(oIdx)!"
-                  style="width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid #ddd;"
-                />
-                <VBtn icon="tabler-x" variant="text" color="error" size="x-small" @click="removeOptionImage(oIdx)" />
-              </template>
-
-              <input
-                :id="`opt-img-${oIdx}`"
-                type="file"
-                accept="image/jpg,image/jpeg,image/png,image/webp"
-                style="display:none"
-                @change="onOptionImageChange(oIdx, $event)"
+              <img
+                v-if="getOptionImagePreview(oIdx)"
+                :src="getOptionImagePreview(oIdx)!"
+                style="width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid #ddd; flex-shrink:0;"
               />
-              <label
-                :for="`opt-img-${oIdx}`"
-                style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; background:rgba(100,100,100,0.12); user-select:none; pointer-events:auto;"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none; flex-shrink:0;">
-                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/><line x1="16" y1="5" x2="22" y2="5"/><line x1="19" y1="2" x2="19" y2="8"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-                </svg>
-                <span style="pointer-events:none;">
-                  {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
-                </span>
-              </label>
+              <VFileInput
+                clearable
+                hide-details
+                density="compact"
+                variant="outlined"
+                prepend-icon=""
+                prepend-inner-icon="tabler-camera"
+                accept="image/jpg,image/jpeg,image/png,image/webp"
+                :placeholder="$t('question.bank.add_image', 'Add Image')"
+                style="max-width: 200px;"
+                @update:model-value="(f: any) => onOptionFileInputChange(oIdx, f)"
+                @click:clear="removeOptionImage(oIdx)"
+              />
             </div>
           </div>
 
