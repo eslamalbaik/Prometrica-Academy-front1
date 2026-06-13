@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 
 definePage({ meta: { requiresAdmin: true } })
@@ -33,10 +33,8 @@ const {
   data,
   fetchNextPage,
   hasNextPage,
-  isFetching,
   isFetchingNextPage,
   isLoading,
-  refetch
 } = useInfiniteQuery({
   queryKey: ['questions', searchDebounced],
   queryFn: fetchQuestions,
@@ -93,13 +91,32 @@ const addOption = () => {
   questionForm.value.options.push({ option_text: '', is_correct: false, image: null, image_path: null })
 }
 
+// Cache object URLs to avoid creating new ones on every render
+const objectUrlCache = new Map<File, string>()
+
+const getObjectUrl = (file: File): string => {
+  if (!objectUrlCache.has(file)) {
+    objectUrlCache.set(file, URL.createObjectURL(file))
+  }
+  return objectUrlCache.get(file)!
+}
+
+const revokeObjectUrl = (file: File | null) => {
+  if (file && objectUrlCache.has(file)) {
+    URL.revokeObjectURL(objectUrlCache.get(file)!)
+    objectUrlCache.delete(file)
+  }
+}
+
 const onOptionImageChange = (idx: number, event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0] ?? null
+  revokeObjectUrl(questionForm.value.options[idx].image)
   questionForm.value.options[idx].image = file
   if (file) questionForm.value.options[idx].image_path = null
 }
 
 const removeOptionImage = (idx: number) => {
+  revokeObjectUrl(questionForm.value.options[idx].image)
   questionForm.value.options[idx].image = null
   questionForm.value.options[idx].image_path = null
 }
@@ -107,7 +124,7 @@ const removeOptionImage = (idx: number) => {
 const getOptionImagePreview = (idx: number): string | null => {
   const opt = questionForm.value.options[idx]
   if (!opt) return null
-  if (opt.image) return URL.createObjectURL(opt.image)
+  if (opt.image) return getObjectUrl(opt.image)
   if (opt.image_path) return `/storage/${opt.image_path}`
   return null
 }
@@ -386,10 +403,14 @@ const deleteQuestion = (id: number) => {
               />
               <label
                 :for="`opt-img-${oIdx}`"
-                style="display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:6px; font-size:12px; cursor:pointer; background:rgba(100,100,100,0.1); user-select:none;"
+                style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; background:rgba(100,100,100,0.12); user-select:none; pointer-events:auto;"
               >
-                <VIcon icon="tabler-photo-up" size="16" />
-                {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none; flex-shrink:0;">
+                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/><line x1="16" y1="5" x2="22" y2="5"/><line x1="19" y1="2" x2="19" y2="8"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                </svg>
+                <span style="pointer-events:none;">
+                  {{ getOptionImagePreview(oIdx) ? $t('question.bank.change_image', 'Change Image') : $t('question.bank.add_image', 'Add Image') }}
+                </span>
               </label>
             </div>
           </div>
