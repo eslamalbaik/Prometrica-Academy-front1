@@ -169,7 +169,7 @@ const getQuestionResult = (questionId: number) => {
                   :value="option.id"
                   v-slot="{ isSelected, toggle }"
                 >
-                  <VCard 
+                  <VCard
                     @click="toggle"
                     :class="[
                       'cursor-pointer transition-all',
@@ -181,10 +181,15 @@ const getQuestionResult = (questionId: number) => {
                     rounded="lg"
                     class="pa-4 d-flex align-center gap-4 hover:bg-grey-100"
                   >
-                    <VIcon 
-                      :icon="isSelected ? 'tabler-circle-check-filled' : 'tabler-circle'" 
-                      :color="isSelected ? 'primary' : 'grey-lighten-1'" 
+                    <VIcon
+                      :icon="isSelected ? 'tabler-circle-check-filled' : 'tabler-circle'"
+                      :color="isSelected ? 'primary' : 'grey-lighten-1'"
                       size="24"
+                    />
+                    <img
+                      v-if="option.image_path"
+                      :src="`/storage/${option.image_path}`"
+                      style="width:72px; height:72px; object-fit:cover; border-radius:8px; flex-shrink:0;"
                     />
                     <span :class="['text-body-1 transition-all', isSelected ? 'font-weight-bold text-primary' : 'text-medium-emphasis']">
                       {{ option.option_text }}
@@ -309,10 +314,15 @@ const getQuestionResult = (questionId: number) => {
                 }"
               >
                 <div class="d-flex align-center gap-3">
-                  <VIcon 
-                    :icon="userAnswers[question.id] === option.id ? (getQuestionResult(question.id)?.is_correct ? 'tabler-circle-check-filled' : 'tabler-circle-x-filled') : 'tabler-circle'" 
-                    :color="userAnswers[question.id] === option.id ? (getQuestionResult(question.id)?.is_correct ? 'success' : 'error') : 'grey-lighten-1'" 
+                  <VIcon
+                    :icon="userAnswers[question.id] === option.id ? (getQuestionResult(question.id)?.is_correct ? 'tabler-circle-check-filled' : 'tabler-circle-x-filled') : 'tabler-circle'"
+                    :color="userAnswers[question.id] === option.id ? (getQuestionResult(question.id)?.is_correct ? 'success' : 'error') : 'grey-lighten-1'"
                     size="20"
+                  />
+                  <img
+                    v-if="option.image_path"
+                    :src="`/storage/${option.image_path}`"
+                    style="width:52px; height:52px; object-fit:cover; border-radius:6px; flex-shrink:0;"
                   />
                   <span class="text-body-2 font-weight-medium" :class="{'text-medium-emphasis': userAnswers[question.id] !== option.id}">
                     {{ option.option_text }}
