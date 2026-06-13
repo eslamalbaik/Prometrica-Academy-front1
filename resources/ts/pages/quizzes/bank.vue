@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, toRaw } from 'vue'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/vue-query'
 import api from '@/plugins/axios'
 
@@ -112,7 +112,7 @@ const save = async () => {
     options.value.forEach((o, i) => {
       fd.append(`options[${i}][option_text]`, o.option_text)
       fd.append(`options[${i}][is_correct]`,  o.is_correct ? '1' : '0')
-      if (o.imageFile) fd.append(`option_images[${i}]`, o.imageFile)
+      if (o.imageFile) fd.append(`option_images[${i}]`, toRaw(o.imageFile))
     })
 
     if (editingQuestion.value) {
