@@ -33,6 +33,7 @@ const form = ref({
   discount_price: null,
   access_days: null,
   include_in_subscription: false,
+  bundle_only: false,
   status: 'Draft'
 })
 
@@ -258,6 +259,14 @@ const submitCourse = () => {
                   :error-messages="validationErrors.access_days"
                 />
                 <VSwitch v-model="form.include_in_subscription" :label="$t('Include in Subscription')" class="mb-4" :error-messages="validationErrors.include_in_subscription" />
+                <VSwitch
+                  v-model="form.bundle_only"
+                  label="Bundle Only — حصري للباقات"
+                  hint="Hide from individual courses listing / إخفاء من قسم الكورسات الفردية"
+                  persistent-hint
+                  class="mb-4"
+                  :error-messages="validationErrors.bundle_only"
+                />
               </VCol>
             </VRow>
           </VWindowItem>

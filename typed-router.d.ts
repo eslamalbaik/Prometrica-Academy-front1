@@ -37,7 +37,6 @@ declare module 'vue-router/auto-routes' {
     'payments-coupons': RouteRecordInfo<'payments-coupons', '/payments/coupons', Record<never, never>, Record<never, never>>,
     'payments-subscriptions': RouteRecordInfo<'payments-subscriptions', '/payments/subscriptions', Record<never, never>, Record<never, never>>,
     'payments-transactions': RouteRecordInfo<'payments-transactions', '/payments/transactions', Record<never, never>, Record<never, never>>,
-    'pricing-plans': RouteRecordInfo<'pricing-plans', '/pricing-plans', Record<never, never>, Record<never, never>>,
     'quizzes-bank': RouteRecordInfo<'quizzes-bank', '/quizzes/bank', Record<never, never>, Record<never, never>>,
     'quizzes-exams': RouteRecordInfo<'quizzes-exams', '/quizzes/exams', Record<never, never>, Record<never, never>>,
     'quizzes-results': RouteRecordInfo<'quizzes-results', '/quizzes/results', Record<never, never>, Record<never, never>>,

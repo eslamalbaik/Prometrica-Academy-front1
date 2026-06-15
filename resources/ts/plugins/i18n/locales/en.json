@@ -1,4 +1,6 @@
 {
+  "Bundle Only": "Bundle Only",
+  "bundle_only_hint": "Hide this course from the individual courses section — only accessible via bundles",
   "2": "2",
   "3": "3",
   "5": "5",

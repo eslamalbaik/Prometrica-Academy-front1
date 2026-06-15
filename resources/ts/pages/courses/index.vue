@@ -71,6 +71,7 @@ const editForm = ref({
   difficulty:        '',
   price:             0,
   is_free:           false,
+  bundle_only:       false,
   status:            'Draft',
 })
 
@@ -92,6 +93,7 @@ const openEditDialog = (course: any) => {
     difficulty:        course.difficulty  || '',
     price:             course.price       || 0,
     is_free:           !!course.is_free,
+    bundle_only:       !!course.bundle_only,
     status:            course.status      || 'Draft',
   }
   isEditDialogVisible.value = true
@@ -118,6 +120,7 @@ const submitEdit = async () => {
     formData.append('difficulty',        editForm.value.difficulty)
     formData.append('price',             editForm.value.is_free ? '0' : String(editForm.value.price))
     formData.append('is_free',           editForm.value.is_free ? '1' : '0')
+    formData.append('bundle_only',       editForm.value.bundle_only ? '1' : '0')
     formData.append('status',            editForm.value.status)
     if (thumbnailFile.value) {
       formData.append('thumbnail', thumbnailFile.value)
@@ -379,6 +382,16 @@ const statusColor = (s: string) => s === 'Published' ? 'success' : 'secondary'
                 :label="$t('Free Course')"
                 color="success"
                 hide-details
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <VSwitch
+                v-model="editForm.bundle_only"
+                label="Bundle Only — حصري للباقات"
+                color="warning"
+                hint="Hide from individual courses listing / إخفاء من قسم الكورسات الفردية"
+                persistent-hint
               />
             </VCol>
 
